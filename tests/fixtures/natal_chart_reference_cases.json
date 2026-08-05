@@ -1,0 +1,71 @@
+[
+  {
+    "case_id": "chicago_1990_public_location",
+    "source": "Swiss Ephemeris 2.10.03 regression baseline; independently cross-checked during Sprint 1",
+    "utc_datetime": "1990-07-15T19:30:00Z",
+    "latitude": 41.8796,
+    "longitude": -87.6237,
+    "house_system": "P",
+    "expected_julian_day_ut": 2448088.3125,
+    "expected_ascendant": 217.64536622004482,
+    "expected_positions": {
+      "sun": {"longitude": 113.04427101050645, "speed_longitude": 0.954000753859193},
+      "moon": {"longitude": 27.657042015996296, "speed_longitude": 14.119550252229134},
+      "mercury": {"longitude": 127.35830688530372, "speed_longitude": 1.8679444129868523},
+      "venus": {"longitude": 84.78605983244498, "speed_longitude": 1.199450415706363},
+      "mars": {"longitude": 32.151311304598316, "speed_longitude": 0.6691140237392341},
+      "jupiter": {"longitude": 112.61930407212103, "speed_longitude": 0.22459355559359262},
+      "saturn": {"longitude": 291.94045377030716, "speed_longitude": -0.07405827657367207},
+      "uranus": {"longitude": 276.95467992952524, "speed_longitude": -0.03844038281428157},
+      "neptune": {"longitude": 282.91289174067595, "speed_longitude": -0.02653459885906319},
+      "pluto": {"longitude": 224.99764258228015, "speed_longitude": -0.0057132413186584885}
+    },
+    "expected_cusps": [
+      217.64536622004482,
+      246.424971873806,
+      279.9100016367267,
+      315.8047376408913,
+      348.69431658361515,
+      15.777938507033696,
+      37.64536622004482,
+      66.42497187380599,
+      99.91000163672669,
+      135.80473764089132,
+      168.69431658361515,
+      195.77793850703367
+    ],
+    "longitude_tolerance": 0.0000001,
+    "speed_tolerance": 0.0000001,
+    "cusp_tolerance": 0.0000001
+  },
+  {
+    "case_id": "mercury_retrograde_2024_istanbul",
+    "source": "Swiss Ephemeris 2.10.03 regression baseline on a known Mercury retrograde date",
+    "utc_datetime": "2024-04-15T12:00:00Z",
+    "latitude": 41.0082,
+    "longitude": 28.9784,
+    "house_system": "P",
+    "expected_julian_day_ut": 2460416.0,
+    "expected_ascendant": 150.93089439701686,
+    "expected_positions": {
+      "mercury": {"longitude": 19.910776345984935, "speed_longitude": -0.7061015548824926}
+    },
+    "expected_cusps": [
+      150.93089439701686,
+      174.0052989869758,
+      202.25396116800098,
+      235.4533774815509,
+      270.4564168841002,
+      302.807827863492,
+      330.93089439701686,
+      354.0052989869758,
+      22.253961168000956,
+      55.4533774815509,
+      90.4564168841002,
+      122.807827863492
+    ],
+    "longitude_tolerance": 0.0000001,
+    "speed_tolerance": 0.0000001,
+    "cusp_tolerance": 0.0000001
+  }
+]

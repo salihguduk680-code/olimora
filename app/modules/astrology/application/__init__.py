@@ -1,0 +1,1 @@
+"""Astrology application services."""

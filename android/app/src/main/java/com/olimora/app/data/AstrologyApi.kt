@@ -46,9 +46,9 @@ data class AthenaResult(
 )
 
 private const val NATAL_CHART_URL =
-    "http://127.0.0.1:8000/api/v1/astrology/natal-chart/preview"
+    "https://olimora-production.up.railway.app/api/v1/astrology/natal-chart/preview"
 private const val ATHENA_URL =
-    "http://127.0.0.1:8000/api/v1/athena/natal-chart/interpret"
+    "https://olimora-production.up.railway.app/api/v1/athena/natal-chart/interpret"
 
 suspend fun generateAthenaInterpretation(
     name: String,

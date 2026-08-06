@@ -19,14 +19,19 @@ EPHEMERIS_PATH=/app/ephe
 APP_VERSION=0.1.0
 ```
 
-Enable public networking for the API service. Railway supplies `PORT`; the
-Docker image listens on that value and runs Alembic migrations before startup.
+The testing API is available at:
+
+```text
+https://olimora-production.up.railway.app
+```
+
+Railway supplies `PORT`; the Docker image listens on that value and runs
+Alembic migrations before startup.
 
 ## Android
 
-Replace the development URL in
-`android/app/src/main/java/com/olimora/app/data/AstrologyApi.kt` with the HTTPS
-domain assigned to the API, then build a fresh APK.
+The Android test build uses the Railway HTTPS domain above. A local-only build
+may temporarily point the same constants to `http://127.0.0.1:8000`.
 
 Do not commit `.env`, database passwords, API keys, or signing keys.
 

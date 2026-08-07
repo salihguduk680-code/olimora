@@ -20,14 +20,30 @@ data class ProvinceLocation(
     val districts: List<DistrictLocation>,
 )
 
+data class CountryLocation(
+    val code: String,
+    val name: String,
+    val provinces: List<ProvinceLocation>,
+)
+
+fun loadCountries(context: Context): List<CountryLocation> = listOf(
+    loadCountry(context, "turkey_locations.json"),
+    loadCountry(context, "syria_locations.json"),
+)
+
 fun loadTurkeyLocations(context: Context): List<ProvinceLocation> {
+    return loadCountry(context, "turkey_locations.json").provinces
+}
+
+private fun loadCountry(context: Context, assetName: String): CountryLocation {
     val json = context.assets
-        .open("turkey_locations.json")
+        .open(assetName)
         .bufferedReader(Charsets.UTF_8)
         .use { it.readText() }
-    val provinceArray = JSONObject(json).getJSONArray("provinces")
+    val root = JSONObject(json)
+    val provinceArray = root.getJSONArray("provinces")
 
-    return buildList(provinceArray.length()) {
+    val provinces = buildList(provinceArray.length()) {
         for (provinceIndex in 0 until provinceArray.length()) {
             val province = provinceArray.getJSONObject(provinceIndex)
             val districtArray = province.getJSONArray("districts")
@@ -57,4 +73,9 @@ fun loadTurkeyLocations(context: Context): List<ProvinceLocation> {
             )
         }
     }
+    return CountryLocation(
+        code = root.getString("country_code"),
+        name = root.getString("country"),
+        provinces = provinces,
+    )
 }

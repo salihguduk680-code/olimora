@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -58,7 +60,14 @@ import com.olimora.app.ui.theme.Gold
 import com.olimora.app.ui.theme.OlimoraTheme
 import com.olimora.app.ui.theme.PrimaryPurple
 import com.olimora.app.ui.theme.SoftSurface
-import com.olimora.app.data.loadTurkeyLocations
+import com.olimora.app.data.AccountSession
+import com.olimora.app.data.ApiException
+import com.olimora.app.data.CountryLocation
+import com.olimora.app.data.SessionStore
+import com.olimora.app.data.authenticate
+import com.olimora.app.data.fetchSavedBirthProfile
+import com.olimora.app.data.loadCountries
+import com.olimora.app.data.saveBirthProfile
 import com.olimora.app.data.AspectResult
 import com.olimora.app.data.BigThreeResult
 import com.olimora.app.data.ChartPointResult
@@ -84,14 +93,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class OlimoraScreen { BirthForm, ChartResult }
+private enum class OlimoraScreen { Login, BirthForm, ChartResult }
 
 @Composable
 fun OlimoraApp() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val provinces = remember { loadTurkeyLocations(context) }
-    var screen by remember { mutableStateOf(OlimoraScreen.BirthForm) }
+    val countries = remember { loadCountries(context) }
+    val sessionStore = remember { SessionStore(context) }
+    var authToken by remember { mutableStateOf(sessionStore.token()) }
+    var screen by remember {
+        mutableStateOf(if (authToken == null) OlimoraScreen.Login else OlimoraScreen.BirthForm)
+    }
     var name by remember { mutableStateOf("") }
     var birthDate by remember { mutableStateOf("") }
     var birthTime by remember { mutableStateOf("") }
@@ -104,6 +117,54 @@ fun OlimoraApp() {
     var athenaInterpretation by remember { mutableStateOf<String?>(null) }
     var isAthenaLoading by remember { mutableStateOf(false) }
 
+    val selectedCountry: CountryLocation? = countries.firstOrNull { it.name == country }
+    val provinces = selectedCountry?.provinces.orEmpty()
+
+    LaunchedEffect(authToken) {
+        val token = authToken ?: return@LaunchedEffect
+        val saved = try {
+            fetchSavedBirthProfile(token)
+        } catch (error: ApiException) {
+            if (error.statusCode == 401) {
+                sessionStore.clear()
+                authToken = null
+                screen = OlimoraScreen.Login
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+        saved?.let { saved ->
+            name = saved.name
+            val dateTimeParts = saved.localDateTime.take(16).split("T")
+            if (dateTimeParts.size == 2) {
+                val date = dateTimeParts[0].split("-")
+                if (date.size == 3) birthDate = "${date[2]}.${date[1]}.${date[0]}"
+                birthTime = dateTimeParts[1]
+            }
+            val matchCountry = countries.firstOrNull { candidate ->
+                candidate.provinces.any { item ->
+                    item.districts.any { location ->
+                        kotlin.math.abs(location.latitude - saved.latitude) < 0.0001 &&
+                            kotlin.math.abs(location.longitude - saved.longitude) < 0.0001
+                    }
+                }
+            }
+            val matchProvince = matchCountry?.provinces?.firstOrNull { item ->
+                item.districts.any { location ->
+                    kotlin.math.abs(location.latitude - saved.latitude) < 0.0001 &&
+                        kotlin.math.abs(location.longitude - saved.longitude) < 0.0001
+                }
+            }
+            country = matchCountry?.name.orEmpty()
+            province = matchProvince
+            district = matchProvince?.districts?.firstOrNull { location ->
+                kotlin.math.abs(location.latitude - saved.latitude) < 0.0001 &&
+                    kotlin.math.abs(location.longitude - saved.longitude) < 0.0001
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -111,8 +172,29 @@ fun OlimoraApp() {
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        OlimoraHeader(step = if (screen == OlimoraScreen.BirthForm) "1 / 2" else "2 / 2")
+        OlimoraHeader(
+            step = when (screen) {
+                OlimoraScreen.Login -> "HESAP"
+                OlimoraScreen.BirthForm -> "1 / 2"
+                OlimoraScreen.ChartResult -> "2 / 2"
+            },
+            onLogout = if (screen == OlimoraScreen.Login) null else {
+                {
+                    sessionStore.clear()
+                    authToken = null
+                    screen = OlimoraScreen.Login
+                }
+            },
+        )
         when (screen) {
+            OlimoraScreen.Login -> AccountScreen(
+                onAuthenticated = { session ->
+                    sessionStore.save(session)
+                    authToken = session.token
+                    screen = OlimoraScreen.BirthForm
+                },
+            )
+
             OlimoraScreen.BirthForm -> BirthFormScreen(
                 name = name,
                 onNameChange = { name = it },
@@ -141,6 +223,7 @@ fun OlimoraApp() {
                     }, parts.getOrNull(0) ?: 12, parts.getOrNull(1) ?: 0, true).show()
                 },
                 country = country,
+                countryOptions = countries.map { it.name },
                 onCountryChange = {
                     country = it
                     province = null
@@ -176,7 +259,7 @@ fun OlimoraApp() {
                         isCalculating = true
                         coroutineScope.launch {
                             try {
-                                val placeName = "${selectedDistrict.name}, ${selectedProvince.name}, Türkiye"
+                                val placeName = "${selectedDistrict.name}, ${selectedProvince.name}, $country"
                                 chartResult = calculateBigThree(
                                     localDateTime = localDateTime,
                                     timezone = selectedDistrict.timezone,
@@ -184,6 +267,19 @@ fun OlimoraApp() {
                                     longitude = selectedDistrict.longitude,
                                     placeName = placeName,
                                 )
+                                authToken?.let { token ->
+                                    runCatching {
+                                        saveBirthProfile(
+                                            token = token,
+                                            name = name,
+                                            localDateTime = localDateTime,
+                                            timezone = selectedDistrict.timezone,
+                                            latitude = selectedDistrict.latitude,
+                                            longitude = selectedDistrict.longitude,
+                                            placeName = placeName,
+                                        )
+                                    }
+                                }
                                 screen = OlimoraScreen.ChartResult
                                 isAthenaLoading = true
                                 try {
@@ -220,7 +316,7 @@ fun OlimoraApp() {
                 name = name.ifBlank { "Gökyüzü Yolcusu" },
                 birthDate = birthDate,
                 birthTime = birthTime,
-                place = "${district?.name}, ${province?.name}, Türkiye",
+                place = "${district?.name}, ${province?.name}, $country",
                 chartResult = chartResult ?: return@Column,
                 athenaInterpretation = athenaInterpretation,
                 isAthenaLoading = isAthenaLoading,
@@ -231,7 +327,93 @@ fun OlimoraApp() {
 }
 
 @Composable
-private fun OlimoraHeader(step: String) {
+private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
+    val coroutineScope = rememberCoroutineScope()
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var registerMode by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 22.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = if (registerMode) "Gökyüzündeki yerini kaydet" else "Tekrar hoş geldin",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = "Doğum bilgilerin hesabında saklansın; her seferinde yeniden girmek zorunda kalma.",
+            modifier = Modifier.padding(top = 8.dp, bottom = 22.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("E-posta") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Şifre (en az 8 karakter)") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        error?.let {
+            Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
+        }
+        Button(
+            onClick = {
+                if (!email.contains("@") || password.length < 8) {
+                    error = "Geçerli bir e-posta ve en az 8 karakterli şifre gir."
+                } else {
+                    loading = true
+                    error = null
+                    coroutineScope.launch {
+                        try {
+                            onAuthenticated(authenticate(email, password, registerMode))
+                        } catch (failure: Exception) {
+                            error = failure.message ?: "Hesaba bağlanılamadı."
+                        } finally {
+                            loading = false
+                        }
+                    }
+                }
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth().padding(top = 18.dp).height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+        ) {
+            Text(if (loading) "Bağlanıyor…" else if (registerMode) "Hesap oluştur" else "Giriş yap")
+        }
+        TextButton(
+            onClick = { registerMode = !registerMode; error = null },
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        ) {
+            Text(if (registerMode) "Zaten hesabın var mı? Giriş yap" else "Hesabın yok mu? Kayıt ol")
+        }
+        Text(
+            text = "Şifren tek yönlü olarak korunur ve açık biçimde saklanmaz.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun OlimoraHeader(step: String, onLogout: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,7 +439,12 @@ private fun OlimoraHeader(step: String) {
                 letterSpacing = 2.sp,
             )
         }
-        Text(text = step, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = step, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            onLogout?.let {
+                TextButton(onClick = it) { Text("Çıkış") }
+            }
+        }
     }
 }
 
@@ -270,6 +457,7 @@ private fun BirthFormScreen(
     birthTime: String,
     onBirthTimeClick: () -> Unit,
     country: String,
+    countryOptions: List<String>,
     onCountryChange: (String) -> Unit,
     province: String,
     provinceOptions: List<String>,
@@ -321,7 +509,7 @@ private fun BirthFormScreen(
         SelectionField(
             label = "Ülke",
             value = country,
-            options = listOf("Türkiye"),
+            options = countryOptions,
             onSelected = onCountryChange,
         )
         Spacer(Modifier.height(12.dp))

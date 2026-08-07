@@ -22,6 +22,7 @@ class CreateBirthProfile:
         place_name: str,
         fold: int | None,
         utc_offset_minutes: int | None,
+        user_id: uuid.UUID | None = None,
     ) -> BirthProfile:
         resolved = resolve_local_datetime(
             local_datetime=local_datetime,
@@ -32,7 +33,7 @@ class CreateBirthProfile:
         now = datetime.now(UTC)
         profile = BirthProfile(
             id=uuid.uuid4(),
-            user_id=None,
+            user_id=user_id,
             name=name,
             local_birth_datetime_naive=local_datetime,
             timezone_name=timezone_name,

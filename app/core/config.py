@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 20.0
     athena_max_output_tokens: int = 500
     athena_requests_per_minute: int = 5
+    auth_secret: str = "olimora-local-development-secret-change-me"
+    auth_token_days: int = 30
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -26,6 +28,12 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql+asyncpg://", 1)
         return value
+
+    @model_validator(mode="after")
+    def require_private_auth_secret_in_production(self) -> "Settings":
+        if self.app_env == "production" and "local-development" in self.auth_secret:
+            raise ValueError("AUTH_SECRET must be configured in production")
+        return self
 
 
 @lru_cache

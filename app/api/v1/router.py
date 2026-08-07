@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.birth_profiles import router as birth_profiles_router
 from app.api.v1.endpoints.birth_time import router as birth_time_router
 from app.api.v1.endpoints.interpretation import router as interpretation_router
@@ -8,6 +9,7 @@ from app.api.v1.endpoints.persisted_charts import router as persisted_charts_rou
 from app.api.v1.endpoints.sun_sign import router as sun_sign_router
 
 router = APIRouter()
+router.include_router(auth_router, tags=["authentication"])
 router.include_router(birth_profiles_router, tags=["birth profiles"])
 router.include_router(persisted_charts_router, tags=["natal charts"])
 router.include_router(sun_sign_router, prefix="/astrology", tags=["astrology"])

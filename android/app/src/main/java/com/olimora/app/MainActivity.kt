@@ -1097,7 +1097,7 @@ private fun SocialScreen(token: String) {
         return
     }
 
-    var friendEmail by remember { mutableStateOf("") }
+    var friendOlimoraId by remember { mutableStateOf("") }
     var actionLoading by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
@@ -1116,22 +1116,31 @@ private fun SocialScreen(token: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        overview?.me?.let { me ->
+            Text(
+                text = "Senin Olimora ID'n: ${me.olimoraId}",
+                modifier = Modifier.padding(bottom = 12.dp),
+                color = PrimaryPurple,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+
         OutlinedTextField(
-            value = friendEmail,
-            onValueChange = { friendEmail = it },
-            label = { Text("Arkadaşının e-postası") },
+            value = friendOlimoraId,
+            onValueChange = { friendOlimoraId = it.lowercase().take(21) },
+            label = { Text("Arkadaşının Olimora ID'si") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         Button(
             onClick = {
-                if (friendEmail.isBlank()) return@Button
+                if (friendOlimoraId.isBlank()) return@Button
                 actionLoading = true
                 error = null
                 coroutineScope.launch {
                     try {
-                        sendFriendRequest(token, friendEmail)
-                        friendEmail = ""
+                        sendFriendRequest(token, friendOlimoraId)
+                        friendOlimoraId = ""
                         refreshKey += 1
                     } catch (exception: Exception) {
                         error = exception.message ?: "İstek gönderilemedi."
@@ -1140,7 +1149,7 @@ private fun SocialScreen(token: String) {
                     }
                 }
             },
-            enabled = !actionLoading && friendEmail.isNotBlank(),
+            enabled = !actionLoading && friendOlimoraId.isNotBlank(),
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(48.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
@@ -1169,7 +1178,7 @@ private fun SocialScreen(token: String) {
             requests.forEach { request ->
                 FriendRequestCard(
                     name = request.user.displayName,
-                    email = request.user.email,
+                    olimoraId = request.user.olimoraId,
                     onAccept = {
                         coroutineScope.launch {
                             runCatching { acceptFriendRequest(token, request.id) }
@@ -1192,7 +1201,7 @@ private fun SocialScreen(token: String) {
         val friends = overview?.friends.orEmpty()
         if (!loading && friends.isEmpty()) {
             Text(
-                "Henüz arkadaşın yok. E-posta adresiyle ilk isteğini gönderebilirsin.",
+                "Henüz arkadaşın yok. Olimora ID ile ilk isteğini gönderebilirsin.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1264,7 +1273,7 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
             TextButton(onClick = onBack) { Text("‹ Geri") }
             Column(Modifier.weight(1f)) {
                 Text(friend.displayName, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                Text(friend.email, style = MaterialTheme.typography.bodySmall)
+                Text(friend.olimoraId, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = { refreshKey += 1 }) { Text("Yenile") }
         }
@@ -1362,7 +1371,7 @@ private fun FriendRow(friend: SocialUser, onClick: () -> Unit) {
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(friend.displayName, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                friend.email,
+                friend.olimoraId,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1374,7 +1383,7 @@ private fun FriendRow(friend: SocialUser, onClick: () -> Unit) {
 @Composable
 private fun FriendRequestCard(
     name: String,
-    email: String,
+    olimoraId: String,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
 ) {
@@ -1386,7 +1395,7 @@ private fun FriendRequestCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(name, fontWeight = FontWeight.Medium)
-            Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(olimoraId, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDecline) { Text("Reddet") }
                 Button(

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +22,17 @@ from app.modules.astrology.infrastructure.models import (
 from app.modules.astrology.infrastructure.repository import AstrologyRepository
 
 router = APIRouter()
+
+
+def _remaining_profile_cooldown_hours(
+    last_change_at: datetime | None, *, now: datetime
+) -> int | None:
+    if last_change_at is None:
+        return None
+    remaining = last_change_at + timedelta(hours=24) - now
+    if remaining.total_seconds() <= 0:
+        return None
+    return max(1, int((remaining.total_seconds() + 3599) // 3600))
 
 
 def _response(profile: object) -> BirthProfileResponse:
@@ -104,8 +116,19 @@ async def save_my_birth_profile(
     existing = (
         await session.execute(select(BirthProfileModel).where(BirthProfileModel.user_id == user.id))
     ).scalar_one_or_none()
+    now = datetime.now(UTC)
+    hours = _remaining_profile_cooldown_hours(user.last_birth_profile_change_at, now=now)
+    if existing is not None and hours is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Doğum bilgilerini yeniden değiştirmek için yaklaşık "
+                f"{hours} saat beklemelisin."
+            ),
+        )
     await session.execute(delete(DailyReadingModel).where(DailyReadingModel.user_id == user.id))
     if existing is not None:
+        user.last_birth_profile_change_at = now
         await session.delete(existing)
         await session.flush()
     try:

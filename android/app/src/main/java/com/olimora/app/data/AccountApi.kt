@@ -30,9 +30,10 @@ data class DailyReading(
     val cached: Boolean,
 )
 
-data class SocialUser(val id: String, val displayName: String, val email: String)
+data class SocialUser(val id: String, val displayName: String, val olimoraId: String)
 data class FriendRequest(val id: String, val user: SocialUser)
 data class SocialOverview(
+    val me: SocialUser,
     val friends: List<SocialUser>,
     val incoming: List<FriendRequest>,
     val outgoing: List<FriendRequest>,
@@ -115,17 +116,18 @@ suspend fun requestDailyReading(token: String): DailyReading = withContext(Dispa
 suspend fun fetchSocialOverview(token: String): SocialOverview = withContext(Dispatchers.IO) {
     val response = requestJson("$API_BASE/social/overview", "GET", token = token)
     SocialOverview(
+        me = parseSocialUser(response.getJSONObject("me")),
         friends = response.getJSONArray("friends").mapObjects(::parseSocialUser),
         incoming = response.getJSONArray("incoming").mapObjects(::parseFriendRequest),
         outgoing = response.getJSONArray("outgoing").mapObjects(::parseFriendRequest),
     )
 }
 
-suspend fun sendFriendRequest(token: String, email: String) = withContext(Dispatchers.IO) {
+suspend fun sendFriendRequest(token: String, olimoraId: String) = withContext(Dispatchers.IO) {
     requestJson(
         "$API_BASE/social/friend-requests",
         "POST",
-        JSONObject().put("email", email.trim()),
+        JSONObject().put("olimora_id", olimoraId.trim().lowercase().removePrefix("@")),
         token,
     )
     Unit
@@ -221,7 +223,7 @@ private fun requestText(
 private fun parseSocialUser(item: JSONObject) = SocialUser(
     id = item.getString("id"),
     displayName = item.getString("display_name"),
-    email = item.getString("email"),
+    olimoraId = item.getString("olimora_id"),
 )
 
 private fun parseFriendRequest(item: JSONObject) = FriendRequest(

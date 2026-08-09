@@ -31,7 +31,17 @@ class UserModel(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    olimora_id: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        unique=True,
+        index=True,
+        default=lambda: f"oli_{uuid.uuid4().hex[:16]}",
+    )
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    last_birth_profile_change_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

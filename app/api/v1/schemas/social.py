@@ -1,17 +1,24 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FriendRequestCreate(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    olimora_id: str = Field(min_length=20, max_length=21, pattern=r"^oli_[a-f0-9]{16}$")
+
+    @field_validator("olimora_id", mode="before")
+    @classmethod
+    def normalize_olimora_id(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower().removeprefix("@")
+        return value
 
 
 class SocialUserResponse(BaseModel):
     id: uuid.UUID
     display_name: str
-    email: str
+    olimora_id: str
 
 
 class FriendRequestResponse(BaseModel):
@@ -21,6 +28,7 @@ class FriendRequestResponse(BaseModel):
 
 
 class SocialOverviewResponse(BaseModel):
+    me: SocialUserResponse
     friends: list[SocialUserResponse]
     incoming: list[FriendRequestResponse]
     outgoing: list[FriendRequestResponse]

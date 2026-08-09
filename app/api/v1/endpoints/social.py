@@ -57,7 +57,12 @@ async def social_overview(
                 id=friendship.id, user=other, created_at=friendship.created_at
             )
             (outgoing if friendship.requested_by_id == user.id else incoming).append(request)
-    return SocialOverviewResponse(friends=friends, incoming=incoming, outgoing=outgoing)
+    return SocialOverviewResponse(
+        me=await _social_user(session, user.id),
+        friends=friends,
+        incoming=incoming,
+        outgoing=outgoing,
+    )
 
 
 @router.post("/friend-requests", response_model=FriendRequestResponse, status_code=201)
@@ -66,13 +71,14 @@ async def send_friend_request(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> FriendRequestResponse:
-    email = request.email.strip().lower()
+    olimora_id = request.olimora_id.strip().lower()
     target = (
-        await session.execute(select(UserModel).where(UserModel.email == email))
+        await session.execute(select(UserModel).where(UserModel.olimora_id == olimora_id))
     ).scalar_one_or_none()
     if target is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Bu e-postayla kullanıcı yok."
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bu Olimora ID ile kullanıcı bulunamadı.",
         )
     if target.id == user.id:
         raise HTTPException(
@@ -217,7 +223,7 @@ async def _social_user(session: AsyncSession, user_id: uuid.UUID) -> SocialUserR
     return SocialUserResponse(
         id=user.id,
         display_name=profile.name if profile else user.email.split("@", 1)[0],
-        email=user.email,
+        olimora_id=user.olimora_id,
     )
 
 

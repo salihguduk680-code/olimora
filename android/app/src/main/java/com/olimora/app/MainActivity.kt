@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class OlimoraScreen { Login, BirthForm, ChartResult }
+private enum class OlimoraScreen { Login, Loading, BirthForm, ChartResult, About }
 
 @Composable
 fun OlimoraApp() {
@@ -103,7 +103,7 @@ fun OlimoraApp() {
     val sessionStore = remember { SessionStore(context) }
     var authToken by remember { mutableStateOf(sessionStore.token()) }
     var screen by remember {
-        mutableStateOf(if (authToken == null) OlimoraScreen.Login else OlimoraScreen.BirthForm)
+        mutableStateOf(if (authToken == null) OlimoraScreen.Login else OlimoraScreen.Loading)
     }
     var name by remember { mutableStateOf("") }
     var birthDate by remember { mutableStateOf("") }
@@ -122,6 +122,7 @@ fun OlimoraApp() {
 
     LaunchedEffect(authToken) {
         val token = authToken ?: return@LaunchedEffect
+        screen = OlimoraScreen.Loading
         val saved = try {
             fetchSavedBirthProfile(token)
         } catch (error: ApiException) {
@@ -133,6 +134,10 @@ fun OlimoraApp() {
             null
         } catch (_: Exception) {
             null
+        }
+        if (saved == null) {
+            if (authToken != null) screen = OlimoraScreen.BirthForm
+            return@LaunchedEffect
         }
         saved?.let { saved ->
             name = saved.name
@@ -162,6 +167,35 @@ fun OlimoraApp() {
                 kotlin.math.abs(location.latitude - saved.latitude) < 0.0001 &&
                     kotlin.math.abs(location.longitude - saved.longitude) < 0.0001
             }
+            isCalculating = true
+            calculationError = null
+            try {
+                chartResult = calculateBigThree(
+                    localDateTime = saved.localDateTime,
+                    timezone = saved.timezone,
+                    latitude = saved.latitude,
+                    longitude = saved.longitude,
+                    placeName = saved.placeName,
+                )
+                screen = OlimoraScreen.ChartResult
+                isAthenaLoading = true
+                athenaInterpretation = runCatching {
+                    generateAthenaInterpretation(
+                        name = saved.name,
+                        localDateTime = saved.localDateTime,
+                        timezone = saved.timezone,
+                        latitude = saved.latitude,
+                        longitude = saved.longitude,
+                        placeName = saved.placeName,
+                    ).interpretation
+                }.getOrNull()
+                isAthenaLoading = false
+            } catch (error: Exception) {
+                calculationError = error.message
+                screen = OlimoraScreen.BirthForm
+            } finally {
+                isCalculating = false
+            }
         }
     }
 
@@ -175,10 +209,26 @@ fun OlimoraApp() {
         OlimoraHeader(
             step = when (screen) {
                 OlimoraScreen.Login -> "HESAP"
-                OlimoraScreen.BirthForm -> "1 / 2"
-                OlimoraScreen.ChartResult -> "2 / 2"
+                OlimoraScreen.Loading -> ""
+                OlimoraScreen.BirthForm -> ""
+                OlimoraScreen.ChartResult -> ""
+                OlimoraScreen.About -> ""
             },
-            onLogout = if (screen == OlimoraScreen.Login) null else {
+            accountEmail = sessionStore.email(),
+            onReturnToChart = if (
+                chartResult != null && screen != OlimoraScreen.ChartResult && screen != OlimoraScreen.Login
+            ) {
+                { screen = OlimoraScreen.ChartResult }
+            } else {
+                null
+            },
+            onEditProfile = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
+                { screen = OlimoraScreen.BirthForm }
+            },
+            onAbout = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
+                { screen = OlimoraScreen.About }
+            },
+            onLogout = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
                 {
                     sessionStore.clear()
                     authToken = null
@@ -191,11 +241,14 @@ fun OlimoraApp() {
                 onAuthenticated = { session ->
                     sessionStore.save(session)
                     authToken = session.token
-                    screen = OlimoraScreen.BirthForm
+                    screen = OlimoraScreen.Loading
                 },
             )
 
+            OlimoraScreen.Loading -> LoadingScreen()
+
             OlimoraScreen.BirthForm -> BirthFormScreen(
+                isEditing = chartResult != null,
                 name = name,
                 onNameChange = { name = it },
                 birthDate = birthDate,
@@ -320,8 +373,11 @@ fun OlimoraApp() {
                 chartResult = chartResult ?: return@Column,
                 athenaInterpretation = athenaInterpretation,
                 isAthenaLoading = isAthenaLoading,
-                onEdit = { screen = OlimoraScreen.BirthForm },
             )
+
+            OlimoraScreen.About -> AboutScreen(onBack = {
+                screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
+            })
         }
     }
 }
@@ -331,6 +387,7 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
     val coroutineScope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordConfirmation by remember { mutableStateOf("") }
     var registerMode by remember { mutableStateOf(true) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -368,6 +425,17 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (registerMode) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = passwordConfirmation,
+                onValueChange = { passwordConfirmation = it },
+                label = { Text("Şifreyi tekrar yaz") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         error?.let {
             Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
         }
@@ -375,6 +443,8 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
             onClick = {
                 if (!email.contains("@") || password.length < 8) {
                     error = "Geçerli bir e-posta ve en az 8 karakterli şifre gir."
+                } else if (registerMode && password != passwordConfirmation) {
+                    error = "Yazdığın iki şifre birbiriyle aynı değil."
                 } else {
                     loading = true
                     error = null
@@ -397,7 +467,11 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
             Text(if (loading) "Bağlanıyor…" else if (registerMode) "Hesap oluştur" else "Giriş yap")
         }
         TextButton(
-            onClick = { registerMode = !registerMode; error = null },
+            onClick = {
+                registerMode = !registerMode
+                passwordConfirmation = ""
+                error = null
+            },
             modifier = Modifier.align(Alignment.CenterHorizontally),
         ) {
             Text(if (registerMode) "Zaten hesabın var mı? Giriş yap" else "Hesabın yok mu? Kayıt ol")
@@ -413,7 +487,15 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
 }
 
 @Composable
-private fun OlimoraHeader(step: String, onLogout: (() -> Unit)? = null) {
+private fun OlimoraHeader(
+    step: String,
+    accountEmail: String?,
+    onReturnToChart: (() -> Unit)?,
+    onEditProfile: (() -> Unit)?,
+    onAbout: (() -> Unit)?,
+    onLogout: (() -> Unit)?,
+) {
+    var profileMenuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -439,17 +521,86 @@ private fun OlimoraHeader(step: String, onLogout: (() -> Unit)? = null) {
                 letterSpacing = 2.sp,
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (onEditProfile == null) {
             Text(text = step, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            onLogout?.let {
-                TextButton(onClick = it) { Text("Çıkış") }
+        } else {
+            Box {
+                TextButton(onClick = { profileMenuExpanded = true }) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(PrimaryPurple.copy(alpha = 0.12f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("●", color = PrimaryPurple, fontSize = 16.sp)
+                    }
+                }
+                DropdownMenu(
+                    expanded = profileMenuExpanded,
+                    onDismissRequest = { profileMenuExpanded = false },
+                ) {
+                    accountEmail?.let {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Hesabım", fontWeight = FontWeight.Medium)
+                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                                }
+                            },
+                            onClick = {},
+                            enabled = false,
+                        )
+                    }
+                    onReturnToChart?.let { returnToChart ->
+                        DropdownMenuItem(
+                            text = { Text("Haritama dön") },
+                            onClick = {
+                                profileMenuExpanded = false
+                                returnToChart()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Profilimi düzenle") },
+                        onClick = {
+                            profileMenuExpanded = false
+                            onEditProfile()
+                        },
+                    )
+                    onAbout?.let { openAbout ->
+                        DropdownMenuItem(
+                            text = { Text("Hakkında ve destek") },
+                            onClick = {
+                                profileMenuExpanded = false
+                                openAbout()
+                            },
+                        )
+                    }
+                    onLogout?.let { logout ->
+                        DropdownMenuItem(
+                            text = { Text("Çıkış yap") },
+                            onClick = {
+                                profileMenuExpanded = false
+                                logout()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
+private fun LoadingScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Gökyüzün hazırlanıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun BirthFormScreen(
+    isEditing: Boolean,
     name: String,
     onNameChange: (String) -> Unit,
     birthDate: String,
@@ -476,13 +627,17 @@ private fun BirthFormScreen(
             .padding(horizontal = 22.dp),
     ) {
         Text(
-            text = "Gökyüzü hikâyen nerede başladı?",
+            text = if (isEditing) "Profil bilgilerin" else "Gökyüzü hikâyen nerede başladı?",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Medium,
         )
         Text(
-            text = "Doğum bilgilerini gir, haritanı birlikte oluşturalım.",
+            text = if (isEditing) {
+                "Bilgilerini güncellediğinde haritanı yeniden hesaplayacağız."
+            } else {
+                "Doğum bilgilerini bir kez gir; hesabında güvenle saklayalım."
+            },
             modifier = Modifier.padding(top = 7.dp, bottom = 20.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -557,7 +712,13 @@ private fun BirthFormScreen(
             ),
         ) {
             Text(
-                if (isCalculating) "Harita hesaplanıyor…" else "Haritamı oluştur",
+                if (isCalculating) {
+                    "Harita hesaplanıyor…"
+                } else if (isEditing) {
+                    "Kaydet ve haritayı yenile"
+                } else {
+                    "Haritamı oluştur"
+                },
                 fontWeight = FontWeight.Medium,
             )
         }
@@ -569,7 +730,6 @@ private fun BirthFormScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        SourceCodeLink()
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -687,7 +847,6 @@ private fun ChartResultScreen(
     chartResult: BigThreeResult,
     athenaInterpretation: String?,
     isAthenaLoading: Boolean,
-    onEdit: () -> Unit,
 ) {
     var detailsExpanded by remember { mutableStateOf(false) }
     Column(
@@ -774,55 +933,88 @@ private fun ChartResultScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.padding(top = 18.dp, bottom = if (detailsExpanded) 16.dp else 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Button(
+            onClick = { detailsExpanded = !detailsExpanded },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp, bottom = if (detailsExpanded) 16.dp else 24.dp)
+                .height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
         ) {
-            OutlinedButton(
-                onClick = onEdit,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp),
-            ) {
-                Text("Bilgileri düzenle", textAlign = TextAlign.Center)
-            }
-            Button(
-                onClick = { detailsExpanded = !detailsExpanded },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
-            ) {
-                Text(if (detailsExpanded) "Detayları gizle" else "Detayları gör")
-            }
+            Text(if (detailsExpanded) "Detayları gizle" else "Detayları gör")
         }
 
         if (detailsExpanded) {
             ChartDetailsSection(chartResult)
         }
-        SourceCodeLink()
         Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun SourceCodeLink() {
+private fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    TextButton(
-        onClick = {
-            context.startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/salihguduk680-code/olimora"),
-                ),
-            )
-        },
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 22.dp),
     ) {
-        Text("Kaynak kodunu görüntüle (AGPL-3.0)")
+        Text("Olimora hakkında", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "Olimora, doğum haritasını anlaşılır ve kişisel bir deneyime dönüştüren bağımsız bir beta projesidir.",
+            modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        AboutLink(
+            label = "Destek ve geri bildirim",
+            description = "Bir sorun bildir veya geliştirme önerini paylaş.",
+            onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/salihguduk680-code/olimora/issues")))
+            },
+        )
+        Spacer(Modifier.height(10.dp))
+        AboutLink(
+            label = "Açık kaynak kodu",
+            description = "Kaynak kodunu ve AGPL-3.0 lisansını görüntüle.",
+            onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/salihguduk680-code/olimora")))
+            },
+        )
+        Text(
+            "Astrolojik yorumlar eğlence ve öz farkındalık amaçlıdır.",
+            modifier = Modifier.padding(top = 20.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = onBack,
+            modifier = Modifier.fillMaxWidth().padding(top = 24.dp).height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Text("Geri dön")
+        }
+    }
+}
+
+@Composable
+private fun AboutLink(label: String, description: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(label, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                description,
+                modifier = Modifier.padding(top = 3.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

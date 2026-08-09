@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth_dependencies import get_current_user
@@ -13,7 +13,11 @@ from app.modules.astrology.domain.exceptions import (
     InvalidLocalDateTimeError,
     NonExistentTimeError,
 )
-from app.modules.astrology.infrastructure.models import BirthProfileModel, UserModel
+from app.modules.astrology.infrastructure.models import (
+    BirthProfileModel,
+    DailyReadingModel,
+    UserModel,
+)
 from app.modules.astrology.infrastructure.repository import AstrologyRepository
 
 router = APIRouter()
@@ -100,6 +104,7 @@ async def save_my_birth_profile(
     existing = (
         await session.execute(select(BirthProfileModel).where(BirthProfileModel.user_id == user.id))
     ).scalar_one_or_none()
+    await session.execute(delete(DailyReadingModel).where(DailyReadingModel.user_id == user.id))
     if existing is not None:
         await session.delete(existing)
         await session.flush()

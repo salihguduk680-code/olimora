@@ -1,14 +1,16 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -36,6 +38,9 @@ class UserModel(Base):
 
     birth_profile: Mapped["BirthProfileModel | None"] = relationship(
         back_populates="user", uselist=False
+    )
+    daily_readings: Mapped[list["DailyReadingModel"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -110,3 +115,28 @@ class NatalChartModel(Base):
     )
 
     birth_profile: Mapped[BirthProfileModel] = relationship(back_populates="natal_charts")
+
+
+class DailyReadingModel(Base):
+    __tablename__ = "daily_readings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "reading_date", name="uq_daily_reading_user_date"),
+        Index("ix_daily_readings_user_id_date", "user_id", "reading_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reading_date: Mapped[date] = mapped_column(Date, nullable=False)
+    main_theme: Mapped[str] = mapped_column(Text, nullable=False)
+    relationships: Mapped[str] = mapped_column(Text, nullable=False)
+    work_money: Mapped[str] = mapped_column(Text, nullable=False)
+    caution: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    user: Mapped[UserModel] = relationship(back_populates="daily_readings")

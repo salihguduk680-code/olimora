@@ -20,6 +20,15 @@ data class SavedBirthProfile(
     val placeName: String,
 )
 
+data class DailyReading(
+    val date: String,
+    val mainTheme: String,
+    val relationships: String,
+    val workMoney: String,
+    val caution: String,
+    val cached: Boolean,
+)
+
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("olimora_session", Context.MODE_PRIVATE)
     fun token(): String? = preferences.getString("token", null)
@@ -79,6 +88,18 @@ suspend fun saveBirthProfile(
         token,
     )
     Unit
+}
+
+suspend fun requestDailyReading(token: String): DailyReading = withContext(Dispatchers.IO) {
+    val response = requestJson("$API_BASE/athena/daily", "POST", JSONObject(), token)
+    DailyReading(
+        date = response.getString("reading_date"),
+        mainTheme = response.getString("main_theme"),
+        relationships = response.getString("relationships"),
+        workMoney = response.getString("work_money"),
+        caution = response.getString("caution"),
+        cached = response.optBoolean("cached", false),
+    )
 }
 
 class ApiException(val statusCode: Int, message: String) : IllegalStateException(message)

@@ -73,9 +73,11 @@ import com.olimora.app.data.BigThreeResult
 import com.olimora.app.data.ChartPointResult
 import com.olimora.app.data.HouseResult
 import com.olimora.app.data.DistrictLocation
+import com.olimora.app.data.DailyReading
 import com.olimora.app.data.ProvinceLocation
 import com.olimora.app.data.calculateBigThree
 import com.olimora.app.data.generateAthenaInterpretation
+import com.olimora.app.data.requestDailyReading
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -116,6 +118,9 @@ fun OlimoraApp() {
     var calculationError by remember { mutableStateOf<String?>(null) }
     var athenaInterpretation by remember { mutableStateOf<String?>(null) }
     var isAthenaLoading by remember { mutableStateOf(false) }
+    var dailyReading by remember { mutableStateOf<DailyReading?>(null) }
+    var dailyReadingLoading by remember { mutableStateOf(false) }
+    var dailyReadingError by remember { mutableStateOf<String?>(null) }
 
     val selectedCountry: CountryLocation? = countries.firstOrNull { it.name == country }
     val provinces = selectedCountry?.provinces.orEmpty()
@@ -333,6 +338,8 @@ fun OlimoraApp() {
                                         )
                                     }
                                 }
+                                dailyReading = null
+                                dailyReadingError = null
                                 screen = OlimoraScreen.ChartResult
                                 isAthenaLoading = true
                                 try {
@@ -373,6 +380,24 @@ fun OlimoraApp() {
                 chartResult = chartResult ?: return@Column,
                 athenaInterpretation = athenaInterpretation,
                 isAthenaLoading = isAthenaLoading,
+                dailyReading = dailyReading,
+                dailyReadingLoading = dailyReadingLoading,
+                dailyReadingError = dailyReadingError,
+                onRequestDailyReading = {
+                    authToken?.let { token ->
+                        dailyReadingLoading = true
+                        dailyReadingError = null
+                        coroutineScope.launch {
+                            try {
+                                dailyReading = requestDailyReading(token)
+                            } catch (error: Exception) {
+                                dailyReadingError = error.message ?: "Günlük yorum şu anda hazırlanamadı."
+                            } finally {
+                                dailyReadingLoading = false
+                            }
+                        }
+                    }
+                },
             )
 
             OlimoraScreen.About -> AboutScreen(onBack = {
@@ -847,6 +872,10 @@ private fun ChartResultScreen(
     chartResult: BigThreeResult,
     athenaInterpretation: String?,
     isAthenaLoading: Boolean,
+    dailyReading: DailyReading?,
+    dailyReadingLoading: Boolean,
+    dailyReadingError: String?,
+    onRequestDailyReading: () -> Unit,
 ) {
     var detailsExpanded by remember { mutableStateOf(false) }
     Column(
@@ -933,6 +962,48 @@ private fun ChartResultScreen(
             }
         }
 
+        Text(
+            text = "Bugünün gökyüzü",
+            modifier = Modifier.padding(top = 22.dp, bottom = 6.dp),
+            fontWeight = FontWeight.Medium,
+            fontSize = 20.sp,
+        )
+        Text(
+            text = "Yalnızca istediğinde hazırlanır. Bugün yeniden açarsan aynı yorum gösterilir.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (dailyReading == null) {
+            Button(
+                onClick = onRequestDailyReading,
+                enabled = !dailyReadingLoading,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+            ) {
+                Text(if (dailyReadingLoading) "Athena bugünü okuyor…" else "Bugünün yorumunu oluştur")
+            }
+            dailyReadingError?.let { message ->
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        } else {
+            DailyReadingCard("Günün teması", dailyReading.mainTheme)
+            DailyReadingCard("Aşk ve ilişkiler", dailyReading.relationships)
+            DailyReadingCard("İş ve para", dailyReading.workMoney)
+            DailyReadingCard("Dikkat", dailyReading.caution)
+            Text(
+                text = "${dailyReading.date} · Yatırım tavsiyesi değildir.",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         Button(
             onClick = { detailsExpanded = !detailsExpanded },
             modifier = Modifier
@@ -949,6 +1020,25 @@ private fun ChartResultScreen(
             ChartDetailsSection(chartResult)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun DailyReadingCard(title: String, text: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Text(title, color = PrimaryPurple, fontWeight = FontWeight.Medium)
+            Text(
+                text = text,
+                modifier = Modifier.padding(top = 5.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

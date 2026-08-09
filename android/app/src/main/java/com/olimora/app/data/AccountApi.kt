@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -28,6 +29,15 @@ data class DailyReading(
     val caution: String,
     val cached: Boolean,
 )
+
+data class SocialUser(val id: String, val displayName: String, val email: String)
+data class FriendRequest(val id: String, val user: SocialUser)
+data class SocialOverview(
+    val friends: List<SocialUser>,
+    val incoming: List<FriendRequest>,
+    val outgoing: List<FriendRequest>,
+)
+data class DirectMessage(val id: String, val body: String, val isMine: Boolean, val createdAt: String)
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("olimora_session", Context.MODE_PRIVATE)
@@ -102,6 +112,58 @@ suspend fun requestDailyReading(token: String): DailyReading = withContext(Dispa
     )
 }
 
+suspend fun fetchSocialOverview(token: String): SocialOverview = withContext(Dispatchers.IO) {
+    val response = requestJson("$API_BASE/social/overview", "GET", token = token)
+    SocialOverview(
+        friends = response.getJSONArray("friends").mapObjects(::parseSocialUser),
+        incoming = response.getJSONArray("incoming").mapObjects(::parseFriendRequest),
+        outgoing = response.getJSONArray("outgoing").mapObjects(::parseFriendRequest),
+    )
+}
+
+suspend fun sendFriendRequest(token: String, email: String) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/social/friend-requests",
+        "POST",
+        JSONObject().put("email", email.trim()),
+        token,
+    )
+    Unit
+}
+
+suspend fun acceptFriendRequest(token: String, requestId: String) = withContext(Dispatchers.IO) {
+    requestJson("$API_BASE/social/friend-requests/$requestId/accept", "POST", JSONObject(), token)
+    Unit
+}
+
+suspend fun declineFriendRequest(token: String, requestId: String) = withContext(Dispatchers.IO) {
+    requestNoContent("$API_BASE/social/friendships/$requestId", "DELETE", token)
+}
+
+suspend fun fetchMessages(token: String, friendId: String): List<DirectMessage> =
+    withContext(Dispatchers.IO) {
+        requestJsonArray("$API_BASE/social/messages/$friendId", "GET", token = token)
+            .mapObjects { item ->
+                DirectMessage(
+                    id = item.getString("id"),
+                    body = item.getString("body"),
+                    isMine = item.getBoolean("is_mine"),
+                    createdAt = item.getString("created_at"),
+                )
+            }
+    }
+
+suspend fun sendDirectMessage(token: String, friendId: String, body: String) =
+    withContext(Dispatchers.IO) {
+        requestJson(
+            "$API_BASE/social/messages/$friendId",
+            "POST",
+            JSONObject().put("body", body.trim()),
+            token,
+        )
+        Unit
+    }
+
 class ApiException(val statusCode: Int, message: String) : IllegalStateException(message)
 
 private fun requestJson(
@@ -109,7 +171,25 @@ private fun requestJson(
     method: String,
     body: JSONObject? = null,
     token: String? = null,
-): JSONObject {
+): JSONObject = JSONObject(requestText(url, method, body, token))
+
+private fun requestJsonArray(
+    url: String,
+    method: String,
+    body: JSONObject? = null,
+    token: String? = null,
+): JSONArray = JSONArray(requestText(url, method, body, token))
+
+private fun requestNoContent(url: String, method: String, token: String) {
+    requestText(url, method, token = token)
+}
+
+private fun requestText(
+    url: String,
+    method: String,
+    body: JSONObject? = null,
+    token: String? = null,
+): String {
     val connection = (URL(url).openConnection() as HttpURLConnection).apply {
         requestMethod = method
         connectTimeout = 10_000
@@ -132,8 +212,22 @@ private fun requestJson(
             val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull()
             throw ApiException(code, detail?.takeIf { it.isNotBlank() } ?: "Sunucu $code hatası verdi.")
         }
-        JSONObject(text)
+        text.ifBlank { "{}" }
     } finally {
         connection.disconnect()
     }
 }
+
+private fun parseSocialUser(item: JSONObject) = SocialUser(
+    id = item.getString("id"),
+    displayName = item.getString("display_name"),
+    email = item.getString("email"),
+)
+
+private fun parseFriendRequest(item: JSONObject) = FriendRequest(
+    id = item.getString("id"),
+    user = parseSocialUser(item.getJSONObject("user")),
+)
+
+private inline fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
+    List(length()) { index -> transform(getJSONObject(index)) }

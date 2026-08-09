@@ -10,6 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,11 +77,21 @@ import com.olimora.app.data.ChartPointResult
 import com.olimora.app.data.HouseResult
 import com.olimora.app.data.DistrictLocation
 import com.olimora.app.data.DailyReading
+import com.olimora.app.data.DirectMessage
+import com.olimora.app.data.SocialOverview
+import com.olimora.app.data.SocialUser
 import com.olimora.app.data.ProvinceLocation
 import com.olimora.app.data.calculateBigThree
 import com.olimora.app.data.generateAthenaInterpretation
 import com.olimora.app.data.requestDailyReading
+import com.olimora.app.data.acceptFriendRequest
+import com.olimora.app.data.declineFriendRequest
+import com.olimora.app.data.fetchMessages
+import com.olimora.app.data.fetchSocialOverview
+import com.olimora.app.data.sendDirectMessage
+import com.olimora.app.data.sendFriendRequest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -372,33 +385,45 @@ fun OlimoraApp() {
                 },
             )
 
-            OlimoraScreen.ChartResult -> ChartResultScreen(
-                name = name.ifBlank { "Gökyüzü Yolcusu" },
-                birthDate = birthDate,
-                birthTime = birthTime,
-                place = "${district?.name}, ${province?.name}, $country",
-                chartResult = chartResult ?: return@Column,
-                athenaInterpretation = athenaInterpretation,
-                isAthenaLoading = isAthenaLoading,
-                dailyReading = dailyReading,
-                dailyReadingLoading = dailyReadingLoading,
-                dailyReadingError = dailyReadingError,
-                onRequestDailyReading = {
-                    authToken?.let { token ->
-                        dailyReadingLoading = true
-                        dailyReadingError = null
-                        coroutineScope.launch {
-                            try {
-                                dailyReading = requestDailyReading(token)
-                            } catch (error: Exception) {
-                                dailyReadingError = error.message ?: "Günlük yorum şu anda hazırlanamadı."
-                            } finally {
-                                dailyReadingLoading = false
-                            }
+            OlimoraScreen.ChartResult -> {
+                val pagerState = rememberPagerState(pageCount = { 2 })
+                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                    if (page == 0) {
+                        ChartResultScreen(
+                            name = name.ifBlank { "Gökyüzü Yolcusu" },
+                            birthDate = birthDate,
+                            birthTime = birthTime,
+                            place = "${district?.name}, ${province?.name}, $country",
+                            chartResult = chartResult ?: return@HorizontalPager,
+                            athenaInterpretation = athenaInterpretation,
+                            isAthenaLoading = isAthenaLoading,
+                            dailyReading = dailyReading,
+                            dailyReadingLoading = dailyReadingLoading,
+                            dailyReadingError = dailyReadingError,
+                            onRequestDailyReading = {
+                                authToken?.let { token ->
+                                    dailyReadingLoading = true
+                                    dailyReadingError = null
+                                    coroutineScope.launch {
+                                        try {
+                                            dailyReading = requestDailyReading(token)
+                                        } catch (error: Exception) {
+                                            dailyReadingError = error.message
+                                                ?: "Günlük yorum şu anda hazırlanamadı."
+                                        } finally {
+                                            dailyReadingLoading = false
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        authToken?.let { token ->
+                            SocialScreen(token = token)
                         }
                     }
-                },
-            )
+                }
+            }
 
             OlimoraScreen.About -> AboutScreen(onBack = {
                 screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
@@ -1038,6 +1063,337 @@ private fun DailyReadingCard(title: String, text: String) {
                 modifier = Modifier.padding(top = 5.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun SocialScreen(token: String) {
+    val coroutineScope = rememberCoroutineScope()
+    var overview by remember { mutableStateOf<SocialOverview?>(null) }
+    var selectedFriend by remember { mutableStateOf<SocialUser?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshKey) {
+        loading = true
+        error = null
+        try {
+            overview = fetchSocialOverview(token)
+        } catch (exception: Exception) {
+            error = exception.message ?: "Arkadaşlar yüklenemedi."
+        } finally {
+            loading = false
+        }
+    }
+
+    selectedFriend?.let { friend ->
+        ConversationScreen(
+            token = token,
+            friend = friend,
+            onBack = { selectedFriend = null },
+        )
+        return
+    }
+
+    var friendEmail by remember { mutableStateOf("") }
+    var actionLoading by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 22.dp),
+    ) {
+        Text(
+            text = "Arkadaşların",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = "Athena ekranına dönmek için sağa kaydır.",
+            modifier = Modifier.padding(top = 6.dp, bottom = 18.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        OutlinedTextField(
+            value = friendEmail,
+            onValueChange = { friendEmail = it },
+            label = { Text("Arkadaşının e-postası") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = {
+                if (friendEmail.isBlank()) return@Button
+                actionLoading = true
+                error = null
+                coroutineScope.launch {
+                    try {
+                        sendFriendRequest(token, friendEmail)
+                        friendEmail = ""
+                        refreshKey += 1
+                    } catch (exception: Exception) {
+                        error = exception.message ?: "İstek gönderilemedi."
+                    } finally {
+                        actionLoading = false
+                    }
+                }
+            },
+            enabled = !actionLoading && friendEmail.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+        ) {
+            Text(if (actionLoading) "Gönderiliyor…" else "Arkadaşlık isteği gönder")
+        }
+
+        error?.let { message ->
+            Text(
+                message,
+                modifier = Modifier.padding(top = 10.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (loading) {
+            Text(
+                "Arkadaşların yükleniyor…",
+                modifier = Modifier.padding(top = 22.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        overview?.incoming?.takeIf { it.isNotEmpty() }?.let { requests ->
+            SocialSectionTitle("Gelen istekler")
+            requests.forEach { request ->
+                FriendRequestCard(
+                    name = request.user.displayName,
+                    email = request.user.email,
+                    onAccept = {
+                        coroutineScope.launch {
+                            runCatching { acceptFriendRequest(token, request.id) }
+                                .onFailure { error = it.message }
+                            refreshKey += 1
+                        }
+                    },
+                    onDecline = {
+                        coroutineScope.launch {
+                            runCatching { declineFriendRequest(token, request.id) }
+                                .onFailure { error = it.message }
+                            refreshKey += 1
+                        }
+                    },
+                )
+            }
+        }
+
+        SocialSectionTitle("Sohbetler")
+        val friends = overview?.friends.orEmpty()
+        if (!loading && friends.isEmpty()) {
+            Text(
+                "Henüz arkadaşın yok. E-posta adresiyle ilk isteğini gönderebilirsin.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        friends.forEach { friend ->
+            FriendRow(friend = friend, onClick = { selectedFriend = friend })
+        }
+
+        overview?.outgoing?.takeIf { it.isNotEmpty() }?.let { requests ->
+            SocialSectionTitle("Gönderilen istekler")
+            requests.forEach { request ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(request.user.displayName, fontWeight = FontWeight.Medium)
+                            Text(
+                                "Yanıt bekleniyor",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = {
+                            coroutineScope.launch {
+                                runCatching { declineFriendRequest(token, request.id) }
+                                refreshKey += 1
+                            }
+                        }) { Text("İptal") }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+@Composable
+private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> Unit) {
+    val coroutineScope = rememberCoroutineScope()
+    var messages by remember(friend.id) { mutableStateOf<List<DirectMessage>>(emptyList()) }
+    var draft by remember(friend.id) { mutableStateOf("") }
+    var loading by remember(friend.id) { mutableStateOf(true) }
+    var error by remember(friend.id) { mutableStateOf<String?>(null) }
+    var refreshKey by remember(friend.id) { mutableStateOf(0) }
+
+    LaunchedEffect(friend.id, refreshKey) {
+        loading = true
+        while (true) {
+            try {
+                messages = fetchMessages(token, friend.id)
+                error = null
+            } catch (exception: Exception) {
+                error = exception.message ?: "Mesajlar yüklenemedi."
+            } finally {
+                loading = false
+            }
+            delay(4_000)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹ Geri") }
+            Column(Modifier.weight(1f)) {
+                Text(friend.displayName, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                Text(friend.email, style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = { refreshKey += 1 }) { Text("Yenile") }
+        }
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            if (loading && messages.isEmpty()) {
+                Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            messages.forEach { message -> MessageBubble(message) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { if (it.length <= 2000) draft = it },
+                placeholder = { Text("Mesaj yaz…") },
+                modifier = Modifier.weight(1f),
+                maxLines = 4,
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    val body = draft.trim()
+                    if (body.isEmpty()) return@Button
+                    draft = ""
+                    coroutineScope.launch {
+                        try {
+                            sendDirectMessage(token, friend.id, body)
+                            refreshKey += 1
+                        } catch (exception: Exception) {
+                            draft = body
+                            error = exception.message
+                        }
+                    }
+                },
+                enabled = draft.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+            ) { Text("Gönder") }
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(message: DirectMessage) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(0.78f),
+            colors = CardDefaults.cardColors(
+                containerColor = if (message.isMine) PrimaryPurple else MaterialTheme.colorScheme.surface
+            ),
+            border = if (message.isMine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Text(
+                message.body,
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SocialSectionTitle(text: String) {
+    Text(
+        text,
+        modifier = Modifier.padding(top = 22.dp, bottom = 10.dp),
+        fontWeight = FontWeight.Medium,
+        fontSize = 18.sp,
+    )
+}
+
+@Composable
+private fun FriendRow(friend: SocialUser, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(14.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(42.dp).background(SoftSurface, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(friend.displayName.take(1).uppercase(), color = Gold) }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(friend.displayName, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                friend.email,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text("Sohbet ›", color = PrimaryPurple)
+    }
+}
+
+@Composable
+private fun FriendRequestCard(
+    name: String,
+    email: String,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(name, fontWeight = FontWeight.Medium)
+            Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDecline) { Text("Reddet") }
+                Button(
+                    onClick = onAccept,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                ) { Text("Kabul et") }
+            }
         }
     }
 }

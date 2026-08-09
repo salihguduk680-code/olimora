@@ -140,3 +140,55 @@ class DailyReadingModel(Base):
     )
 
     user: Mapped[UserModel] = relationship(back_populates="daily_readings")
+
+
+class FriendshipModel(Base):
+    __tablename__ = "friendships"
+    __table_args__ = (
+        UniqueConstraint("user_low_id", "user_high_id", name="uq_friendship_user_pair"),
+        CheckConstraint("user_low_id <> user_high_id", name="ck_friendship_distinct_users"),
+        CheckConstraint("status IN ('pending', 'accepted')", name="ck_friendship_status"),
+        Index("ix_friendships_low_status", "user_low_id", "status"),
+        Index("ix_friendships_high_status", "user_high_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_low_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    user_high_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    requested_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    messages: Mapped[list["DirectMessageModel"]] = relationship(
+        back_populates="friendship", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class DirectMessageModel(Base):
+    __tablename__ = "direct_messages"
+    __table_args__ = (
+        Index("ix_direct_messages_friendship_created", "friendship_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    friendship_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("friendships.id", ondelete="CASCADE"), nullable=False
+    )
+    sender_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    friendship: Mapped[FriendshipModel] = relationship(back_populates="messages")

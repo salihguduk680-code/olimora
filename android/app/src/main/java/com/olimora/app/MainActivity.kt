@@ -18,6 +18,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +92,7 @@ import com.olimora.app.data.ChartPointResult
 import com.olimora.app.data.HouseResult
 import com.olimora.app.data.DistrictLocation
 import com.olimora.app.data.DailyReading
+import com.olimora.app.data.DailySignReading
 import com.olimora.app.data.DirectMessage
 import com.olimora.app.data.SocialOverview
 import com.olimora.app.data.SocialUser
@@ -97,6 +100,7 @@ import com.olimora.app.data.ProvinceLocation
 import com.olimora.app.data.calculateBigThree
 import com.olimora.app.data.generateAthenaInterpretation
 import com.olimora.app.data.requestDailyReading
+import com.olimora.app.data.requestDailySignReading
 import com.olimora.app.data.acceptFriendRequest
 import com.olimora.app.data.declineFriendRequest
 import com.olimora.app.data.fetchMessages
@@ -188,6 +192,9 @@ fun OlimoraApp() {
     var dailyReading by remember { mutableStateOf<DailyReading?>(null) }
     var dailyReadingLoading by remember { mutableStateOf(false) }
     var dailyReadingError by remember { mutableStateOf<String?>(null) }
+    var dailySignReading by remember { mutableStateOf<DailySignReading?>(null) }
+    var dailySignReadingLoading by remember { mutableStateOf(false) }
+    var dailySignReadingError by remember { mutableStateOf<String?>(null) }
     var unreadMessageCount by remember { mutableStateOf(0) }
     var lastNotifiedUnreadCount by remember { mutableStateOf(0) }
 
@@ -417,6 +424,8 @@ fun OlimoraApp() {
                                 }
                                 dailyReading = null
                                 dailyReadingError = null
+                                dailySignReading = null
+                                dailySignReadingError = null
                                 screen = OlimoraScreen.ChartResult
                                 isAthenaLoading = true
                                 try {
@@ -472,6 +481,25 @@ fun OlimoraApp() {
                             dailyReading = dailyReading,
                             dailyReadingLoading = dailyReadingLoading,
                             dailyReadingError = dailyReadingError,
+                            dailySignReading = dailySignReading,
+                            dailySignReadingLoading = dailySignReadingLoading,
+                            dailySignReadingError = dailySignReadingError,
+                            onRequestDailySignReading = {
+                                authToken?.let { token ->
+                                    dailySignReadingLoading = true
+                                    dailySignReadingError = null
+                                    coroutineScope.launch {
+                                        try {
+                                            dailySignReading = requestDailySignReading(token)
+                                        } catch (error: Exception) {
+                                            dailySignReadingError = error.message
+                                                ?: "Günlük burç yorumu şu anda hazırlanamadı."
+                                        } finally {
+                                            dailySignReadingLoading = false
+                                        }
+                                    }
+                                }
+                            },
                             onRequestDailyReading = {
                                 authToken?.let { token ->
                                     dailyReadingLoading = true
@@ -500,6 +528,7 @@ fun OlimoraApp() {
 
             OlimoraScreen.Settings -> SettingsScreen(
                 accountEmail = sessionStore.email(),
+                token = authToken,
                 onEditProfile = { screen = OlimoraScreen.BirthForm },
                 onAbout = { screen = OlimoraScreen.About },
                 onLogout = {
@@ -974,6 +1003,10 @@ private fun ChartResultScreen(
     dailyReading: DailyReading?,
     dailyReadingLoading: Boolean,
     dailyReadingError: String?,
+    dailySignReading: DailySignReading?,
+    dailySignReadingLoading: Boolean,
+    dailySignReadingError: String?,
+    onRequestDailySignReading: () -> Unit,
     onRequestDailyReading: () -> Unit,
 ) {
     var detailsExpanded by remember { mutableStateOf(false) }
@@ -1062,13 +1095,55 @@ private fun ChartResultScreen(
         }
 
         Text(
-            text = "Bugünün gökyüzü",
+            text = "Burcunun bugünü",
             modifier = Modifier.padding(top = 22.dp, bottom = 6.dp),
             fontWeight = FontWeight.Medium,
             fontSize = 20.sp,
         )
         Text(
-            text = "Yalnızca istediğinde hazırlanır. Bugün yeniden açarsan aynı yorum gösterilir.",
+            text = "${signName(chartResult.sunSign)} burcundaki herkesin paylaştığı kısa günlük yorum.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (dailySignReading == null) {
+            Button(
+                onClick = onRequestDailySignReading,
+                enabled = !dailySignReadingLoading,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+            ) {
+                Text(if (dailySignReadingLoading) "Burcunun bugünü hazırlanıyor…" else "Burcumun bugününü göster")
+            }
+            dailySignReadingError?.let { message ->
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        } else {
+            DailyReadingCard("Günün teması", dailySignReading.mainTheme)
+            DailyReadingCard("Aşk ve ilişkiler", dailySignReading.relationships)
+            DailyReadingCard("İş ve para", dailySignReading.workMoney)
+            DailyReadingCard("Dikkat", dailySignReading.caution)
+            Text(
+                text = "${dailySignReading.date} · Genel burç yorumu · Yatırım tavsiyesi değildir.",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        Text(
+            text = "Athena’nın sana özel bugünü",
+            modifier = Modifier.padding(top = 24.dp, bottom = 6.dp),
+            fontWeight = FontWeight.Medium,
+            fontSize = 20.sp,
+        )
+        Text(
+            text = "Doğum haritan ve bugünün gökyüzü birlikte değerlendirilir; yalnızca istediğinde hazırlanır.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -1183,12 +1258,17 @@ private fun ChartPagerNavigation(
 @Composable
 private fun SettingsScreen(
     accountEmail: String?,
+    token: String?,
     onEditProfile: () -> Unit,
     onAbout: () -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    var myOlimoraId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(token) {
+        myOlimoraId = token?.let { runCatching { fetchSocialOverview(it).me.olimoraId }.getOrNull() }
+    }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp),
@@ -1201,6 +1281,28 @@ private fun SettingsScreen(
                 modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        myOlimoraId?.let { olimoraId ->
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                colors = CardDefaults.cardColors(containerColor = SoftSurface),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Olimora kimliğin", fontWeight = FontWeight.Medium)
+                    Text(
+                        olimoraId,
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = PrimaryPurple,
+                    )
+                    Text(
+                        "Arkadaşlarının seni bulması için bu kimliği paylaşabilirsin.",
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
         SettingsAction(
             title = "Doğum profilimi düzenle",
@@ -1309,15 +1411,6 @@ private fun SocialScreen(token: String) {
             modifier = Modifier.padding(top = 6.dp, bottom = 18.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        overview?.me?.let { me ->
-            Text(
-                text = "Senin Olimora ID'n: ${me.olimoraId}",
-                modifier = Modifier.padding(bottom = 12.dp),
-                color = PrimaryPurple,
-                fontWeight = FontWeight.Medium,
-            )
-        }
 
         OutlinedTextField(
             value = friendOlimoraId,
@@ -1447,6 +1540,7 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
     var loading by remember(friend.id) { mutableStateOf(true) }
     var error by remember(friend.id) { mutableStateOf<String?>(null) }
     var refreshKey by remember(friend.id) { mutableStateOf(0) }
+    val messageListState = rememberLazyListState()
 
     LaunchedEffect(friend.id, refreshKey) {
         loading = true
@@ -1463,6 +1557,12 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
         }
     }
 
+    LaunchedEffect(messages.size, draft) {
+        if (messages.isNotEmpty()) {
+            messageListState.scrollToItem(messages.lastIndex)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Geri") }
@@ -1472,16 +1572,21 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
             }
             TextButton(onClick = { refreshKey += 1 }) { Text("Yenile") }
         }
-        Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+        LazyColumn(
+            state = messageListState,
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Bottom,
         ) {
             if (loading && messages.isEmpty()) {
-                Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                item {
+                    Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            messages.forEach { message -> MessageBubble(message) }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Spacer(Modifier.height(8.dp))
+            items(messages.size, key = { messages[it].id }) { index ->
+                MessageBubble(messages[index])
+            }
+            error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            item { Spacer(Modifier.height(8.dp)) }
         }
         Row(
             modifier = Modifier
@@ -1535,13 +1640,41 @@ private fun MessageBubble(message: DirectMessage) {
             border = if (message.isMine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             shape = RoundedCornerShape(16.dp),
         ) {
-            Text(
-                message.body,
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
-                color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
-            )
+            Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                Text(
+                    message.body,
+                    color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    formatMessageTime(message.createdAt),
+                    modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
+                    color = if (message.isMine) Color.White.copy(alpha = 0.72f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                )
+            }
         }
     }
+}
+
+private fun formatMessageTime(value: String): String {
+    val normalized = value.replace(
+        Regex("\\.(\\d{3})\\d*(Z|[+-]\\d{2}:\\d{2})$"),
+        ".$1$2",
+    )
+    val inputPatterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSSX",
+        "yyyy-MM-dd'T'HH:mm:ssX",
+    )
+    val parsed = inputPatterns.firstNotNullOfOrNull { pattern ->
+        runCatching {
+            SimpleDateFormat(pattern, Locale.US).apply {
+                isLenient = false
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.parse(normalized)
+        }.getOrNull()
+    } ?: return Regex("T(\\d{2}:\\d{2})").find(value)?.groupValues?.get(1) ?: ""
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(parsed)
 }
 
 @Composable

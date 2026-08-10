@@ -152,6 +152,27 @@ class DailyReadingModel(Base):
     user: Mapped[UserModel] = relationship(back_populates="daily_readings")
 
 
+class DailySignReadingModel(Base):
+    __tablename__ = "daily_sign_readings"
+    __table_args__ = (
+        UniqueConstraint("reading_date", "sign", name="uq_daily_sign_reading_date_sign"),
+        Index("ix_daily_sign_readings_date_sign", "reading_date", "sign"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reading_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sign: Mapped[str] = mapped_column(String(20), nullable=False)
+    main_theme: Mapped[str] = mapped_column(Text, nullable=False)
+    relationships: Mapped[str] = mapped_column(Text, nullable=False)
+    work_money: Mapped[str] = mapped_column(Text, nullable=False)
+    caution: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class FriendshipModel(Base):
     __tablename__ = "friendships"
     __table_args__ = (

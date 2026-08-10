@@ -30,6 +30,16 @@ data class DailyReading(
     val cached: Boolean,
 )
 
+data class DailySignReading(
+    val date: String,
+    val sign: String,
+    val mainTheme: String,
+    val relationships: String,
+    val workMoney: String,
+    val caution: String,
+    val cached: Boolean,
+)
+
 data class SocialUser(
     val id: String,
     val displayName: String,
@@ -111,6 +121,19 @@ suspend fun requestDailyReading(token: String): DailyReading = withContext(Dispa
     val response = requestJson("$API_BASE/athena/daily", "POST", JSONObject(), token)
     DailyReading(
         date = response.getString("reading_date"),
+        mainTheme = response.getString("main_theme"),
+        relationships = response.getString("relationships"),
+        workMoney = response.getString("work_money"),
+        caution = response.getString("caution"),
+        cached = response.optBoolean("cached", false),
+    )
+}
+
+suspend fun requestDailySignReading(token: String): DailySignReading = withContext(Dispatchers.IO) {
+    val response = requestJson("$API_BASE/athena/daily-sign", "POST", JSONObject(), token)
+    DailySignReading(
+        date = response.getString("reading_date"),
+        sign = response.getString("sign"),
         mainTheme = response.getString("main_theme"),
         relationships = response.getString("relationships"),
         workMoney = response.getString("work_money"),

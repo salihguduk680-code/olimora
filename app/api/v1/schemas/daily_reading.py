@@ -13,3 +13,7 @@ class DailyReadingResponse(BaseModel):
     source: Literal["openai", "fallback"]
     model: str | None = None
     cached: bool
+
+
+class DailySignReadingResponse(DailyReadingResponse):
+    sign: str

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth_dependencies import get_current_user
 from app.api.dependencies import get_athena_interpretation_service, get_ephemeris_calculator
-from app.api.v1.schemas.daily_reading import DailyReadingResponse
+from app.api.v1.schemas.daily_reading import DailyReadingResponse, DailySignReadingResponse
 from app.api.v1.schemas.interpretation import (
     AthenaInterpretationRequest,
     AthenaInterpretationResponse,
@@ -29,6 +29,7 @@ from app.modules.astrology.domain.ports import EphemerisCalculator
 from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
     DailyReadingModel,
+    DailySignReadingModel,
     UserModel,
 )
 from app.modules.interpretation.service import (
@@ -38,6 +39,113 @@ from app.modules.interpretation.service import (
 
 router = APIRouter()
 _request_times: defaultdict[str, deque[float]] = defaultdict(deque)
+
+
+@router.post("/daily-sign", response_model=DailySignReadingResponse)
+async def create_daily_sign_reading(
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    ephemeris: Annotated[EphemerisCalculator, Depends(get_ephemeris_calculator)],
+    athena: Annotated[AthenaInterpretationService, Depends(get_athena_interpretation_service)],
+) -> DailySignReadingResponse:
+    profile = (
+        await session.execute(select(BirthProfileModel).where(BirthProfileModel.user_id == user.id))
+    ).scalar_one_or_none()
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Günlük burç yorumu için önce doğum bilgilerini kaydet.",
+        )
+    try:
+        timezone = ZoneInfo(profile.timezone_name)
+    except ZoneInfoNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Kayıtlı saat dilimi geçersiz.",
+        ) from error
+
+    reading_date = datetime.now(UTC).astimezone(timezone).date()
+    try:
+        natal_chart = ephemeris.calculate_natal_chart(
+            utc_datetime=profile.resolved_utc_datetime,
+            latitude=profile.latitude,
+            longitude=profile.longitude,
+            house_system="P",
+        )
+    except EphemerisCalculationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Güneş burcu hesaplanamadı.",
+        ) from error
+    sign = natal_chart.sun.sign
+
+    # Aynı tarih ve burç için bütün kullanıcılar tek üretimi paylaşır.
+    lock_key = f"daily-sign:{reading_date.isoformat()}:{sign}"
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": lock_key})
+    existing = (
+        await session.execute(
+            select(DailySignReadingModel).where(
+                DailySignReadingModel.reading_date == reading_date,
+                DailySignReadingModel.sign == sign,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return _daily_sign_response(existing, cached=True)
+
+    try:
+        global_noon = datetime.combine(reading_date, datetime_time(hour=12), tzinfo=UTC)
+        transit_chart = ephemeris.calculate_natal_chart(
+            utc_datetime=global_noon,
+            latitude=0.0,
+            longitude=0.0,
+            house_system="P",
+        )
+    except EphemerisCalculationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Günün gökyüzü hesaplanamadı.",
+        ) from error
+
+    previous = (
+        await session.execute(
+            select(DailySignReadingModel)
+            .where(
+                DailySignReadingModel.sign == sign,
+                DailySignReadingModel.reading_date < reading_date,
+            )
+            .order_by(DailySignReadingModel.reading_date.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    previous_text = None
+    if previous is not None:
+        previous_text = " | ".join(
+            (previous.main_theme, previous.relationships, previous.work_money, previous.caution)
+        )
+    try:
+        result = await athena.interpret_daily_sign(
+            sign=sign,
+            reading_date=reading_date.isoformat(),
+            transit_chart=transit_chart,
+            previous_reading=previous_text,
+        )
+        values: dict[str, str | None] = {
+            "main_theme": result.main_theme,
+            "relationships": result.relationships,
+            "work_money": result.work_money,
+            "caution": result.caution,
+            "source": "openai",
+            "model": result.model,
+        }
+    except InterpretationUnavailableError:
+        values = _daily_fallback(sign, transit_chart.moon.sign)
+
+    reading = DailySignReadingModel(reading_date=reading_date, sign=sign, **values)
+    session.add(reading)
+    await session.commit()
+    await session.refresh(reading)
+    return _daily_sign_response(reading, cached=False)
 
 
 @router.post("/daily", response_model=DailyReadingResponse)
@@ -127,6 +235,22 @@ async def create_daily_reading(
 def _daily_response(reading: DailyReadingModel, *, cached: bool) -> DailyReadingResponse:
     return DailyReadingResponse(
         reading_date=reading.reading_date,
+        main_theme=reading.main_theme,
+        relationships=reading.relationships,
+        work_money=reading.work_money,
+        caution=reading.caution,
+        source=reading.source,  # type: ignore[arg-type]
+        model=reading.model,
+        cached=cached,
+    )
+
+
+def _daily_sign_response(
+    reading: DailySignReadingModel, *, cached: bool
+) -> DailySignReadingResponse:
+    return DailySignReadingResponse(
+        reading_date=reading.reading_date,
+        sign=reading.sign,
         main_theme=reading.main_theme,
         relationships=reading.relationships,
         work_money=reading.work_money,

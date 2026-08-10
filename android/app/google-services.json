@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "355814034042",
+    "project_id": "olimora-c9124",
+    "storage_bucket": "olimora-c9124.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:355814034042:android:50126bfa27c14306a1c9c3",
+        "android_client_info": {
+          "package_name": "com.olimora.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4hi5VhbQtbnDw1p6Bvd0SNQ33RJBpj_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

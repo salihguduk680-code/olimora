@@ -1,0 +1,36 @@
+package com.olimora.app
+
+import android.content.Context
+import com.google.firebase.FirebaseApp
+import com.google.firebase.installations.FirebaseInstallations
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import com.olimora.app.data.registerPushInstallation
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
+
+internal suspend fun registerFirebaseInstallation(context: Context, authToken: String): Boolean {
+    val firebaseApp = FirebaseApp.initializeApp(context) ?: return false
+    val fid = suspendCoroutine { continuation ->
+        FirebaseInstallations.getInstance(firebaseApp).id.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                continuation.resume(task.result)
+            } else {
+                continuation.resumeWithException(
+                    task.exception ?: IllegalStateException("Firebase installation ID alınamadı."),
+                )
+            }
+        }
+    }
+    registerPushInstallation(authToken, fid)
+    return true
+}
+
+class OlimoraMessagingService : FirebaseMessagingService() {
+    override fun onMessageReceived(message: RemoteMessage) {
+        val title = message.notification?.title ?: "Olimora'da yeni mesajın var"
+        val body = message.notification?.body ?: "Bir arkadaşın sana yazdı."
+        applicationContext.showMessageNotification(unreadCount = 1, title = title, body = body)
+    }
+}

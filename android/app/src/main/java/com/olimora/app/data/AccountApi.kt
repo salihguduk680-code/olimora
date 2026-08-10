@@ -30,13 +30,19 @@ data class DailyReading(
     val cached: Boolean,
 )
 
-data class SocialUser(val id: String, val displayName: String, val olimoraId: String)
+data class SocialUser(
+    val id: String,
+    val displayName: String,
+    val olimoraId: String,
+    val unreadCount: Int,
+)
 data class FriendRequest(val id: String, val user: SocialUser)
 data class SocialOverview(
     val me: SocialUser,
     val friends: List<SocialUser>,
     val incoming: List<FriendRequest>,
     val outgoing: List<FriendRequest>,
+    val totalUnread: Int,
 )
 data class DirectMessage(val id: String, val body: String, val isMine: Boolean, val createdAt: String)
 
@@ -120,6 +126,7 @@ suspend fun fetchSocialOverview(token: String): SocialOverview = withContext(Dis
         friends = response.getJSONArray("friends").mapObjects(::parseSocialUser),
         incoming = response.getJSONArray("incoming").mapObjects(::parseFriendRequest),
         outgoing = response.getJSONArray("outgoing").mapObjects(::parseFriendRequest),
+        totalUnread = response.optInt("total_unread", 0),
     )
 }
 
@@ -165,6 +172,16 @@ suspend fun sendDirectMessage(token: String, friendId: String, body: String) =
         )
         Unit
     }
+
+suspend fun registerPushInstallation(token: String, fid: String) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/notifications/installation",
+        "PUT",
+        JSONObject().put("fid", fid).put("platform", "android"),
+        token,
+    )
+    Unit
+}
 
 class ApiException(val statusCode: Int, message: String) : IllegalStateException(message)
 
@@ -224,6 +241,7 @@ private fun parseSocialUser(item: JSONObject) = SocialUser(
     id = item.getString("id"),
     displayName = item.getString("display_name"),
     olimoraId = item.getString("olimora_id"),
+    unreadCount = item.optInt("unread_count", 0),
 )
 
 private fun parseFriendRequest(item: JSONObject) = FriendRequest(

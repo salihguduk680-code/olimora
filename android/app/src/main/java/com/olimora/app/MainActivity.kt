@@ -1,10 +1,17 @@
 package com.olimora.app
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -36,12 +44,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +69,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.olimora.app.ui.theme.Gold
 import com.olimora.app.ui.theme.OlimoraTheme
 import com.olimora.app.ui.theme.PrimaryPurple
@@ -99,6 +112,14 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        createMessageNotificationChannel()
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
         enableEdgeToEdge()
         setContent {
             OlimoraTheme {
@@ -106,9 +127,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun createMessageNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                MESSAGE_CHANNEL_ID,
+                "Arkadaş mesajları",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "Olimora arkadaşlarından gelen yeni mesajlar" }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
 }
 
-private enum class OlimoraScreen { Login, Loading, BirthForm, ChartResult, About }
+private const val MESSAGE_CHANNEL_ID = "olimora_messages"
+
+internal fun Context.showMessageNotification(
+    unreadCount: Int,
+    title: String = "Olimora'da yeni mesajın var",
+    body: String = "$unreadCount okunmamış mesaj seni bekliyor.",
+) {
+    if (
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    ) return
+    val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_email)
+        .setContentTitle(title)
+        .setContentText(body)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        .build()
+    NotificationManagerCompat.from(this).notify(2001, notification)
+}
+
+private enum class OlimoraScreen { Login, Loading, BirthForm, ChartResult, Settings, About }
 
 @Composable
 fun OlimoraApp() {
@@ -134,6 +188,8 @@ fun OlimoraApp() {
     var dailyReading by remember { mutableStateOf<DailyReading?>(null) }
     var dailyReadingLoading by remember { mutableStateOf(false) }
     var dailyReadingError by remember { mutableStateOf<String?>(null) }
+    var unreadMessageCount by remember { mutableStateOf(0) }
+    var lastNotifiedUnreadCount by remember { mutableStateOf(0) }
 
     val selectedCountry: CountryLocation? = countries.firstOrNull { it.name == country }
     val provinces = selectedCountry?.provinces.orEmpty()
@@ -217,6 +273,23 @@ fun OlimoraApp() {
         }
     }
 
+    LaunchedEffect(authToken) {
+        val token = authToken ?: return@LaunchedEffect
+        val firebasePushReady = runCatching {
+            registerFirebaseInstallation(context, token)
+        }.getOrDefault(false)
+        while (true) {
+            runCatching { fetchSocialOverview(token) }.getOrNull()?.let { overview ->
+                unreadMessageCount = overview.totalUnread
+                if (!firebasePushReady && overview.totalUnread > lastNotifiedUnreadCount) {
+                    context.showMessageNotification(overview.totalUnread)
+                }
+                lastNotifiedUnreadCount = overview.totalUnread
+            }
+            delay(10_000)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -230,6 +303,7 @@ fun OlimoraApp() {
                 OlimoraScreen.Loading -> ""
                 OlimoraScreen.BirthForm -> ""
                 OlimoraScreen.ChartResult -> ""
+                OlimoraScreen.Settings -> ""
                 OlimoraScreen.About -> ""
             },
             accountEmail = sessionStore.email(),
@@ -240,18 +314,8 @@ fun OlimoraApp() {
             } else {
                 null
             },
-            onEditProfile = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
-                { screen = OlimoraScreen.BirthForm }
-            },
-            onAbout = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
-                { screen = OlimoraScreen.About }
-            },
-            onLogout = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
-                {
-                    sessionStore.clear()
-                    authToken = null
-                    screen = OlimoraScreen.Login
-                }
+            onSettings = if (screen == OlimoraScreen.Login || screen == OlimoraScreen.Loading) null else {
+                { screen = OlimoraScreen.Settings }
             },
         )
         when (screen) {
@@ -387,9 +451,17 @@ fun OlimoraApp() {
 
             OlimoraScreen.ChartResult -> {
                 val pagerState = rememberPagerState(pageCount = { 2 })
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    if (page == 0) {
-                        ChartResultScreen(
+                Column(Modifier.fillMaxSize()) {
+                    ChartPagerNavigation(
+                        selectedPage = pagerState.currentPage,
+                        unreadCount = unreadMessageCount,
+                        onSelectPage = { page ->
+                            coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                        },
+                    )
+                    HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                        if (page == 0) {
+                            ChartResultScreen(
                             name = name.ifBlank { "Gökyüzü Yolcusu" },
                             birthDate = birthDate,
                             birthTime = birthTime,
@@ -416,14 +488,29 @@ fun OlimoraApp() {
                                     }
                                 }
                             },
-                        )
-                    } else {
-                        authToken?.let { token ->
-                            SocialScreen(token = token)
+                            )
+                        } else {
+                            authToken?.let { token ->
+                                SocialScreen(token = token)
+                            }
                         }
                     }
                 }
             }
+
+            OlimoraScreen.Settings -> SettingsScreen(
+                accountEmail = sessionStore.email(),
+                onEditProfile = { screen = OlimoraScreen.BirthForm },
+                onAbout = { screen = OlimoraScreen.About },
+                onLogout = {
+                    sessionStore.clear()
+                    authToken = null
+                    screen = OlimoraScreen.Login
+                },
+                onBack = {
+                    screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
+                },
+            )
 
             OlimoraScreen.About -> AboutScreen(onBack = {
                 screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
@@ -541,9 +628,7 @@ private fun OlimoraHeader(
     step: String,
     accountEmail: String?,
     onReturnToChart: (() -> Unit)?,
-    onEditProfile: (() -> Unit)?,
-    onAbout: (() -> Unit)?,
-    onLogout: (() -> Unit)?,
+    onSettings: (() -> Unit)?,
 ) {
     var profileMenuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -571,7 +656,7 @@ private fun OlimoraHeader(
                 letterSpacing = 2.sp,
             )
         }
-        if (onEditProfile == null) {
+        if (onSettings == null) {
             Text(text = step, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             Box {
@@ -582,7 +667,12 @@ private fun OlimoraHeader(
                             .background(PrimaryPurple.copy(alpha = 0.12f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("●", color = PrimaryPurple, fontSize = 16.sp)
+                        Text(
+                            text = accountEmail?.firstOrNull()?.uppercase() ?: "👤",
+                            color = PrimaryPurple,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        )
                     }
                 }
                 DropdownMenu(
@@ -610,28 +700,12 @@ private fun OlimoraHeader(
                             },
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text("Profilimi düzenle") },
-                        onClick = {
-                            profileMenuExpanded = false
-                            onEditProfile()
-                        },
-                    )
-                    onAbout?.let { openAbout ->
+                    onSettings?.let { openSettings ->
                         DropdownMenuItem(
-                            text = { Text("Hakkında ve destek") },
+                            text = { Text("Ayarlar") },
                             onClick = {
                                 profileMenuExpanded = false
-                                openAbout()
-                            },
-                        )
-                    }
-                    onLogout?.let { logout ->
-                        DropdownMenuItem(
-                            text = { Text("Çıkış yap") },
-                            onClick = {
-                                profileMenuExpanded = false
-                                logout()
+                                openSettings()
                             },
                         )
                     }
@@ -1068,6 +1142,121 @@ private fun DailyReadingCard(title: String, text: String) {
 }
 
 @Composable
+private fun ChartPagerNavigation(
+    selectedPage: Int,
+    unreadCount: Int,
+    onSelectPage: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf("Haritam" to 0, "Arkadaşlar" to 1).forEach { (label, page) ->
+            val selected = selectedPage == page
+            TextButton(
+                onClick = { onSelectPage(page) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = if (selected) PrimaryPurple.copy(alpha = 0.12f) else Color.Transparent,
+                    contentColor = if (selected) PrimaryPurple else MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Text(label, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
+                if (page == 1 && unreadCount > 0) {
+                    Box(
+                        modifier = Modifier.padding(start = 6.dp).size(20.dp)
+                            .background(PrimaryPurple, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = unreadCount.coerceAtMost(99).toString(),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    accountEmail: String?,
+    onEditProfile: () -> Unit,
+    onAbout: () -> Unit,
+    onLogout: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 22.dp),
+    ) {
+        TextButton(onClick = onBack) { Text("‹ Haritama dön") }
+        Text("Ayarlar", style = MaterialTheme.typography.headlineMedium)
+        accountEmail?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        SettingsAction(
+            title = "Doğum profilimi düzenle",
+            description = "Doğum tarihi, saat ve yer bilgilerini güncelle",
+            onClick = onEditProfile,
+        )
+        SettingsAction(
+            title = "Bildirimler",
+            description = "Yeni arkadaş mesajları için cihaz izinlerini yönet",
+            onClick = {
+                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                }
+                context.startActivity(intent)
+            },
+        )
+        SettingsAction(
+            title = "Hakkında ve destek",
+            description = "Açık kaynak, lisans, destek ve sürüm bilgileri",
+            onClick = onAbout,
+        )
+        OutlinedButton(
+            onClick = onLogout,
+            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) { Text("Çıkış yap") }
+    }
+}
+
+@Composable
+private fun SettingsAction(
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                description,
+                modifier = Modifier.padding(top = 3.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text("›", color = PrimaryPurple, fontSize = 22.sp)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun SocialScreen(token: String) {
     val coroutineScope = rememberCoroutineScope()
     var overview by remember { mutableStateOf<SocialOverview?>(null) }
@@ -1099,12 +1288,17 @@ private fun SocialScreen(token: String) {
 
     var friendOlimoraId by remember { mutableStateOf("") }
     var actionLoading by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp),
+    PullToRefreshBox(
+        isRefreshing = loading,
+        onRefresh = { refreshKey += 1 },
+        modifier = Modifier.fillMaxSize(),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp),
+        ) {
         Text(
             text = "Arkadaşların",
             style = MaterialTheme.typography.headlineMedium,
@@ -1240,7 +1434,8 @@ private fun SocialScreen(token: String) {
                 }
             }
         }
-        Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(28.dp))
+        }
     }
 }
 
@@ -1289,7 +1484,10 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
             Spacer(Modifier.height(8.dp))
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedTextField(

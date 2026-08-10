@@ -1,9 +1,10 @@
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +21,13 @@ from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
     DirectMessageModel,
+    FirebaseInstallationModel,
     FriendshipModel,
     UserModel,
 )
+from app.modules.notifications.service import get_firebase_push_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/social")
 
@@ -49,7 +54,16 @@ async def social_overview(
     outgoing: list[FriendRequestResponse] = []
     for friendship in relationships:
         other_id = _other_user_id(friendship, user.id)
-        other = await _social_user(session, other_id)
+        unread_count = 0
+        if friendship.status == "accepted":
+            unread_count = await session.scalar(
+                select(func.count(DirectMessageModel.id)).where(
+                    DirectMessageModel.friendship_id == friendship.id,
+                    DirectMessageModel.sender_id != user.id,
+                    DirectMessageModel.read_at.is_(None),
+                )
+            ) or 0
+        other = await _social_user(session, other_id, unread_count=unread_count)
         if friendship.status == "accepted":
             friends.append(other)
         else:
@@ -62,6 +76,7 @@ async def social_overview(
         friends=friends,
         incoming=incoming,
         outgoing=outgoing,
+        total_unread=sum(item.unread_count for item in friends),
     )
 
 
@@ -173,6 +188,16 @@ async def list_messages(
             .limit(100)
         )
     ).scalars().all()
+    await session.execute(
+        update(DirectMessageModel)
+        .where(
+            DirectMessageModel.friendship_id == friendship.id,
+            DirectMessageModel.sender_id != user.id,
+            DirectMessageModel.read_at.is_(None),
+        )
+        .values(read_at=datetime.now(UTC))
+    )
+    await session.commit()
     return [_message_response(item, current_user_id=user.id) for item in reversed(messages)]
 
 
@@ -190,6 +215,23 @@ async def send_message(
     session.add(message)
     await session.commit()
     await session.refresh(message)
+    fids = list(
+        (
+            await session.execute(
+                select(FirebaseInstallationModel.fid).where(
+                    FirebaseInstallationModel.user_id == friend_user_id
+                )
+            )
+        ).scalars()
+    )
+    if fids:
+        try:
+            sender = await _social_user(session, user.id)
+            await get_firebase_push_service().send_new_message(
+                fids=fids, sender_name=sender.display_name
+            )
+        except Exception:
+            logger.exception("Push notification could not be sent")
     return _message_response(message, current_user_id=user.id)
 
 
@@ -213,7 +255,9 @@ async def _accepted_friendship(
     return friendship
 
 
-async def _social_user(session: AsyncSession, user_id: uuid.UUID) -> SocialUserResponse:
+async def _social_user(
+    session: AsyncSession, user_id: uuid.UUID, *, unread_count: int = 0
+) -> SocialUserResponse:
     user = await session.get(UserModel, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kullanıcı bulunamadı.")
@@ -224,6 +268,7 @@ async def _social_user(session: AsyncSession, user_id: uuid.UUID) -> SocialUserR
         id=user.id,
         display_name=profile.name if profile else user.email.split("@", 1)[0],
         olimora_id=user.olimora_id,
+        unread_count=unread_count,
     )
 
 

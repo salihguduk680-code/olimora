@@ -19,6 +19,7 @@ class SocialUserResponse(BaseModel):
     id: uuid.UUID
     display_name: str
     olimora_id: str
+    unread_count: int = 0
 
 
 class FriendRequestResponse(BaseModel):
@@ -32,6 +33,7 @@ class SocialOverviewResponse(BaseModel):
     friends: list[SocialUserResponse]
     incoming: list[FriendRequestResponse]
     outgoing: list[FriendRequestResponse]
+    total_unread: int = 0
 
 
 class MessageCreate(BaseModel):

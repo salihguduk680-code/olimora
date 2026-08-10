@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     athena_requests_per_minute: int = 5
     auth_secret: str = "olimora-local-development-secret-change-me"
     auth_token_days: int = 30
+    firebase_project_id: str | None = None
+    firebase_service_account_json: str | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod

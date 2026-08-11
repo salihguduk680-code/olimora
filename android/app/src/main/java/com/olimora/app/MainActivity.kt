@@ -3,8 +3,6 @@ package com.olimora.app
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -437,32 +435,10 @@ fun OlimoraApp() {
                     birthDate = formatDateInput(input)
                     calculationError = null
                 },
-                onBirthDateClick = {
-                    val parts = birthDate.split(".").mapNotNull { it.toIntOrNull() }
-                    val calendar = Calendar.getInstance()
-                    val day = parts.getOrNull(0) ?: calendar.get(Calendar.DAY_OF_MONTH)
-                    val month = (parts.getOrNull(1) ?: calendar.get(Calendar.MONTH) + 1) - 1
-                    val year = parts.getOrNull(2) ?: calendar.get(Calendar.YEAR)
-                    DatePickerDialog(context, { _, selectedYear, selectedMonth, selectedDay ->
-                        birthDate = String.format(
-                            Locale.ROOT,
-                            "%02d.%02d.%04d",
-                            selectedDay,
-                            selectedMonth + 1,
-                            selectedYear,
-                        )
-                    }, year, month, day).show()
-                },
                 birthTime = birthTime,
                 onBirthTimeChange = { input ->
                     birthTime = formatTimeInput(input)
                     calculationError = null
-                },
-                onBirthTimeClick = {
-                    val parts = birthTime.split(":").mapNotNull { it.toIntOrNull() }
-                    TimePickerDialog(context, { _, hour, minute ->
-                        birthTime = String.format(Locale.ROOT, "%02d:%02d", hour, minute)
-                    }, parts.getOrNull(0) ?: 12, parts.getOrNull(1) ?: 0, true).show()
                 },
                 country = country,
                 countryOptions = countries.map { it.name },
@@ -982,10 +958,8 @@ private fun BirthFormScreen(
     onNameChange: (String) -> Unit,
     birthDate: String,
     onBirthDateChange: (String) -> Unit,
-    onBirthDateClick: () -> Unit,
     birthTime: String,
     onBirthTimeChange: (String) -> Unit,
-    onBirthTimeClick: () -> Unit,
     country: String,
     countryOptions: List<String>,
     onCountryChange: (String) -> Unit,
@@ -999,6 +973,8 @@ private fun BirthFormScreen(
     calculationError: String?,
     onCreateChart: () -> Unit,
 ) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1030,7 +1006,7 @@ private fun BirthFormScreen(
                     value = birthDate,
                     placeholder = "GG.AA.YYYY",
                     onValueChange = onBirthDateChange,
-                    onClick = onBirthDateClick,
+                    onClick = { showDatePicker = true },
                 )
             }
             Box(Modifier.weight(1f)) {
@@ -1039,7 +1015,7 @@ private fun BirthFormScreen(
                     value = birthTime,
                     placeholder = "SS:DD",
                     onValueChange = onBirthTimeChange,
-                    onClick = onBirthTimeClick,
+                    onClick = { showTimePicker = true },
                 )
             }
         }
@@ -1114,6 +1090,26 @@ private fun BirthFormScreen(
         }
         Spacer(Modifier.height(24.dp))
     }
+    if (showDatePicker) {
+        OlimoraDatePickerDialog(
+            initialValue = birthDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                onBirthDateChange(it)
+                showDatePicker = false
+            },
+        )
+    }
+    if (showTimePicker) {
+        OlimoraTimePickerDialog(
+            initialValue = birthTime,
+            onDismiss = { showTimePicker = false },
+            onConfirm = {
+                onBirthTimeChange(it)
+                showTimePicker = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -1145,6 +1141,162 @@ private fun PickerField(
             unfocusedBorderColor = MaterialTheme.colorScheme.outline,
         ),
     )
+}
+
+@Composable
+private fun OlimoraDatePickerDialog(
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val today = remember { Calendar.getInstance() }
+    val parts = initialValue.split(".").mapNotNull(String::toIntOrNull)
+    var day by remember { mutableStateOf(parts.getOrNull(0) ?: today.get(Calendar.DAY_OF_MONTH)) }
+    var month by remember { mutableStateOf(parts.getOrNull(1) ?: today.get(Calendar.MONTH) + 1) }
+    var year by remember { mutableStateOf(parts.getOrNull(2) ?: today.get(Calendar.YEAR)) }
+    val maximumDay = remember(month, year) {
+        Calendar.getInstance().apply {
+            set(Calendar.YEAR, year.coerceIn(1900, today.get(Calendar.YEAR)))
+            set(Calendar.MONTH, month.coerceIn(1, 12) - 1)
+        }.getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+    LaunchedEffect(maximumDay) {
+        if (day > maximumDay) day = maximumDay
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Doğum tarihini seç", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                Text(
+                    "Değerleri yazabilir veya − / + düğmeleriyle değiştirebilirsin.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    NumberStepper("Gün", day, 1..maximumDay, Modifier.weight(1f)) { day = it }
+                    NumberStepper("Ay", month, 1..12, Modifier.weight(1f)) { month = it }
+                    NumberStepper(
+                        "Yıl",
+                        year,
+                        1900..today.get(Calendar.YEAR),
+                        Modifier.weight(1.25f),
+                    ) { year = it }
+                }
+                Text(
+                    String.format(Locale.ROOT, "%02d.%02d.%04d", day, month, year),
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    color = PrimaryPurple,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(String.format(Locale.ROOT, "%02d.%02d.%04d", day, month, year))
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+            ) { Text("Tarihi kullan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        shape = RoundedCornerShape(24.dp),
+    )
+}
+
+@Composable
+private fun OlimoraTimePickerDialog(
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val parts = initialValue.split(":").mapNotNull(String::toIntOrNull)
+    var hour by remember { mutableStateOf(parts.getOrNull(0)?.coerceIn(0, 23) ?: 12) }
+    var minute by remember { mutableStateOf(parts.getOrNull(1)?.coerceIn(0, 59) ?: 0) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Doğum saatini seç", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "24 saat düzeninde saat ve dakikayı belirle.",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    NumberStepper("Saat", hour, 0..23, Modifier.weight(1f)) { hour = it }
+                    NumberStepper("Dakika", minute, 0..59, Modifier.weight(1f)) { minute = it }
+                }
+                Text(
+                    String.format(Locale.ROOT, "%02d:%02d", hour, minute),
+                    modifier = Modifier.padding(top = 18.dp),
+                    color = PrimaryPurple,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 24.sp,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(String.format(Locale.ROOT, "%02d:%02d", hour, minute)) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+            ) { Text("Saati kullan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        shape = RoundedCornerShape(24.dp),
+    )
+}
+
+@Composable
+private fun NumberStepper(
+    label: String,
+    value: Int,
+    range: IntRange,
+    modifier: Modifier = Modifier,
+    onValueChange: (Int) -> Unit,
+) {
+    var inputText by remember { mutableStateOf(value.toString()) }
+    LaunchedEffect(value) { inputText = value.toString() }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        OutlinedTextField(
+            value = inputText,
+            onValueChange = { input ->
+                val digits = input.filter(Char::isDigit).take(range.last.toString().length)
+                inputText = digits
+                digits.toIntOrNull()?.takeIf { it in range }?.let {
+                    onValueChange(it)
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Center),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = RoundedCornerShape(12.dp),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextButton(
+                onClick = { onValueChange(if (value <= range.first) range.last else value - 1) },
+                contentPadding = PaddingValues(2.dp),
+            ) { Text("−", fontSize = 20.sp) }
+            TextButton(
+                onClick = { onValueChange(if (value >= range.last) range.first else value + 1) },
+                contentPadding = PaddingValues(2.dp),
+            ) { Text("+", fontSize = 20.sp) }
+        }
+    }
 }
 
 @Composable

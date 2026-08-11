@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Android bildirim simgeleri tek renkli maske kullanır. Olimora'nın yıldız izi. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,1.8L14.05,8.05L20.3,10.1L14.05,12.15L12,18.4L9.95,12.15L3.7,10.1L9.95,8.05Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18.3,15.2L19.15,17.75L21.7,18.6L19.15,19.45L18.3,22L17.45,19.45L14.9,18.6L17.45,17.75Z" />
+</vector>

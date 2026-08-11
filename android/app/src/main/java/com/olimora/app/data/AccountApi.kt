@@ -45,6 +45,9 @@ data class SocialUser(
     val displayName: String,
     val olimoraId: String,
     val unreadCount: Int,
+    val isOnline: Boolean,
+    val lastSeenAt: String?,
+    val statusMessage: String?,
 )
 data class FriendRequest(val id: String, val user: SocialUser)
 data class SocialOverview(
@@ -163,6 +166,20 @@ suspend fun sendFriendRequest(token: String, olimoraId: String) = withContext(Di
     Unit
 }
 
+suspend fun updateSocialStatus(token: String, statusMessage: String?) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/social/status",
+        "PATCH",
+        JSONObject().put("status_message", statusMessage ?: JSONObject.NULL),
+        token,
+    )
+    Unit
+}
+
+suspend fun deleteAccount(token: String) = withContext(Dispatchers.IO) {
+    requestNoContent("$API_BASE/auth/me", "DELETE", token)
+}
+
 suspend fun acceptFriendRequest(token: String, requestId: String) = withContext(Dispatchers.IO) {
     requestJson("$API_BASE/social/friend-requests/$requestId/accept", "POST", JSONObject(), token)
     Unit
@@ -265,6 +282,9 @@ private fun parseSocialUser(item: JSONObject) = SocialUser(
     displayName = item.getString("display_name"),
     olimoraId = item.getString("olimora_id"),
     unreadCount = item.optInt("unread_count", 0),
+    isOnline = item.optBoolean("is_online", false),
+    lastSeenAt = item.optString("last_seen_at").takeIf { it.isNotBlank() && it != "null" },
+    statusMessage = item.optString("status_message").takeIf { it.isNotBlank() && it != "null" },
 )
 
 private fun parseFriendRequest(item: JSONObject) = FriendRequest(

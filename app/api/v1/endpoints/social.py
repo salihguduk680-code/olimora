@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +16,7 @@ from app.api.v1.schemas.social import (
     MessageResponse,
     SocialOverviewResponse,
     SocialUserResponse,
+    StatusUpdate,
 )
 from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import (
@@ -32,11 +33,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/social")
 
 
+@router.patch("/status", response_model=SocialUserResponse)
+async def update_status(
+    request: StatusUpdate,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> SocialUserResponse:
+    user.status_message = request.status_message
+    user.last_seen_at = datetime.now(UTC)
+    await session.commit()
+    return await _social_user(session, user.id)
+
+
 @router.get("/overview", response_model=SocialOverviewResponse)
 async def social_overview(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> SocialOverviewResponse:
+    await _touch_presence(session, user)
     relationships = (
         await session.execute(
             select(FriendshipModel)
@@ -179,6 +193,7 @@ async def list_messages(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> list[MessageResponse]:
+    await _touch_presence(session, user, commit=False)
     friendship = await _accepted_friendship(session, user.id, friend_user_id)
     messages = (
         await session.execute(
@@ -208,6 +223,7 @@ async def send_message(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> MessageResponse:
+    await _touch_presence(session, user, commit=False)
     friendship = await _accepted_friendship(session, user.id, friend_user_id)
     message = DirectMessageModel(
         friendship_id=friendship.id, sender_id=user.id, body=request.body.strip()
@@ -269,7 +285,24 @@ async def _social_user(
         display_name=profile.name if profile else user.email.split("@", 1)[0],
         olimora_id=user.olimora_id,
         unread_count=unread_count,
+        is_online=(
+            user.last_seen_at is not None
+            and user.last_seen_at >= datetime.now(UTC) - timedelta(seconds=75)
+        ),
+        last_seen_at=user.last_seen_at,
+        status_message=user.status_message,
     )
+
+
+async def _touch_presence(
+    session: AsyncSession, user: UserModel, *, commit: bool = True
+) -> None:
+    """Record activity without exposing which screen or content the user is viewing."""
+    now = datetime.now(UTC)
+    if user.last_seen_at is None or user.last_seen_at < now - timedelta(seconds=20):
+        user.last_seen_at = now
+        if commit:
+            await session.commit()
 
 
 def _ordered_pair(first: uuid.UUID, second: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:

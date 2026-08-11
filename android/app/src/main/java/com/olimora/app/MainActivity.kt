@@ -8,6 +8,7 @@ import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +19,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -37,13 +39,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,8 +69,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -91,22 +99,24 @@ import com.olimora.app.data.BigThreeResult
 import com.olimora.app.data.ChartPointResult
 import com.olimora.app.data.HouseResult
 import com.olimora.app.data.DistrictLocation
-import com.olimora.app.data.DailyReading
 import com.olimora.app.data.DailySignReading
+import com.olimora.app.data.DailyReading
 import com.olimora.app.data.DirectMessage
 import com.olimora.app.data.SocialOverview
 import com.olimora.app.data.SocialUser
 import com.olimora.app.data.ProvinceLocation
 import com.olimora.app.data.calculateBigThree
 import com.olimora.app.data.generateAthenaInterpretation
-import com.olimora.app.data.requestDailyReading
 import com.olimora.app.data.requestDailySignReading
+import com.olimora.app.data.requestDailyReading
 import com.olimora.app.data.acceptFriendRequest
 import com.olimora.app.data.declineFriendRequest
+import com.olimora.app.data.deleteAccount
 import com.olimora.app.data.fetchMessages
 import com.olimora.app.data.fetchSocialOverview
 import com.olimora.app.data.sendDirectMessage
 import com.olimora.app.data.sendFriendRequest
+import com.olimora.app.data.updateSocialStatus
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -127,7 +137,78 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OlimoraTheme {
-                OlimoraApp()
+                val isDebuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+                if (isDebuggable && intent.getBooleanExtra("settings_design_preview", false)) {
+                    SettingsScreen(
+                        accountEmail = "salih@olimora.app",
+                        token = null,
+                        profileName = "Salih",
+                        sunSign = "pisces",
+                        moonSign = "pisces",
+                        ascendantSign = "libra",
+                        onEditProfile = {},
+                        onAbout = {},
+                        onLogout = {},
+                        onAccountDeleted = {},
+                        betaPremiumEnabled = true,
+                        onBetaPremiumChange = {},
+                        onBack = {},
+                    )
+                } else if (isDebuggable && intent.getBooleanExtra("premium_design_preview", false)) {
+                    ChartResultScreen(
+                        name = "Salih",
+                        birthDate = "12.03.2002",
+                        birthTime = "20:00",
+                        place = "Vakfıkebir, Trabzon, Türkiye",
+                        chartResult = BigThreeResult(
+                            sunSign = "pisces",
+                            sunDegree = 22.0,
+                            moonSign = "pisces",
+                            moonDegree = 7.5,
+                            ascendantSign = "libra",
+                            ascendantDegree = 23.3,
+                            positions = emptyList(),
+                            houses = emptyList(),
+                            aspects = emptyList(),
+                        ),
+                        athenaInterpretation = "Sezgisel ve yaratıcı yönün, insan ilişkilerindeki denge arayışınla birleşiyor. Haritan; duyguları güçlü hissettiğini fakat dışarıya daha sakin ve uzlaştırıcı bir izlenim verdiğini anlatıyor.",
+                        isAthenaLoading = false,
+                        dailySignReading = null,
+                        dailySignReadingLoading = false,
+                        dailySignReadingError = null,
+                        onRequestDailySignReading = {},
+                        betaPremiumEnabled = true,
+                        premiumDailyReading = null,
+                        premiumDailyReadingLoading = false,
+                        premiumDailyReadingError = null,
+                        onRequestPremiumDailyReading = {},
+                    )
+                } else if (
+                    isDebuggable &&
+                    intent.getBooleanExtra("chat_design_preview", false)
+                ) {
+                    ConversationScreen(
+                        token = "",
+                        friend = SocialUser(
+                            id = "preview-friend",
+                            displayName = "Elif",
+                            olimoraId = "oli_preview",
+                            unreadCount = 0,
+                            isOnline = true,
+                            lastSeenAt = null,
+                            statusMessage = "Gökyüzünü dinliyor ✦",
+                        ),
+                        onBack = {},
+                        previewMessages = listOf(
+                            DirectMessage("preview-1", "Bugünkü yorumuna baktın mı? ✨", false, "2026-08-11T15:07:00Z"),
+                            DirectMessage("preview-2", "Evet 😄", true, "2026-08-11T15:08:00Z"),
+                            DirectMessage("preview-3", "🌙", false, "2026-08-11T15:09:00Z"),
+                            DirectMessage("preview-4", "Çok iyi olmuş!", true, "2026-08-11T15:10:00Z"),
+                        ),
+                    )
+                } else {
+                    OlimoraApp()
+                }
             }
         }
     }
@@ -157,7 +238,8 @@ internal fun Context.showMessageNotification(
         PackageManager.PERMISSION_GRANTED
     ) return
     val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_dialog_email)
+        .setSmallIcon(R.drawable.ic_olimora_notification)
+        .setColor(0xFF7B46AD.toInt())
         .setContentTitle(title)
         .setContentText(body)
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -189,14 +271,23 @@ fun OlimoraApp() {
     var calculationError by remember { mutableStateOf<String?>(null) }
     var athenaInterpretation by remember { mutableStateOf<String?>(null) }
     var isAthenaLoading by remember { mutableStateOf(false) }
-    var dailyReading by remember { mutableStateOf<DailyReading?>(null) }
-    var dailyReadingLoading by remember { mutableStateOf(false) }
-    var dailyReadingError by remember { mutableStateOf<String?>(null) }
     var dailySignReading by remember { mutableStateOf<DailySignReading?>(null) }
     var dailySignReadingLoading by remember { mutableStateOf(false) }
     var dailySignReadingError by remember { mutableStateOf<String?>(null) }
+    var premiumDailyReading by remember { mutableStateOf<DailyReading?>(null) }
+    var premiumDailyReadingLoading by remember { mutableStateOf(false) }
+    var premiumDailyReadingError by remember { mutableStateOf<String?>(null) }
     var unreadMessageCount by remember { mutableStateOf(0) }
     var lastNotifiedUnreadCount by remember { mutableStateOf(0) }
+    val experiencePreferences = remember {
+        context.getSharedPreferences("olimora_experience", Context.MODE_PRIVATE)
+    }
+    var onboardingStep by remember {
+        mutableStateOf(if (experiencePreferences.getBoolean("intro_seen", false)) -1 else 0)
+    }
+    var betaPremiumEnabled by remember {
+        mutableStateOf(experiencePreferences.getBoolean("beta_premium_enabled", false))
+    }
 
     val selectedCountry: CountryLocation? = countries.firstOrNull { it.name == country }
     val provinces = selectedCountry?.provinces.orEmpty()
@@ -422,8 +513,6 @@ fun OlimoraApp() {
                                         )
                                     }
                                 }
-                                dailyReading = null
-                                dailyReadingError = null
                                 dailySignReading = null
                                 dailySignReadingError = null
                                 screen = OlimoraScreen.ChartResult
@@ -478,9 +567,6 @@ fun OlimoraApp() {
                             chartResult = chartResult ?: return@HorizontalPager,
                             athenaInterpretation = athenaInterpretation,
                             isAthenaLoading = isAthenaLoading,
-                            dailyReading = dailyReading,
-                            dailyReadingLoading = dailyReadingLoading,
-                            dailyReadingError = dailyReadingError,
                             dailySignReading = dailySignReading,
                             dailySignReadingLoading = dailySignReadingLoading,
                             dailySignReadingError = dailySignReadingError,
@@ -500,18 +586,22 @@ fun OlimoraApp() {
                                     }
                                 }
                             },
-                            onRequestDailyReading = {
+                            betaPremiumEnabled = betaPremiumEnabled,
+                            premiumDailyReading = premiumDailyReading,
+                            premiumDailyReadingLoading = premiumDailyReadingLoading,
+                            premiumDailyReadingError = premiumDailyReadingError,
+                            onRequestPremiumDailyReading = {
                                 authToken?.let { token ->
-                                    dailyReadingLoading = true
-                                    dailyReadingError = null
+                                    premiumDailyReadingLoading = true
+                                    premiumDailyReadingError = null
                                     coroutineScope.launch {
                                         try {
-                                            dailyReading = requestDailyReading(token)
+                                            premiumDailyReading = requestDailyReading(token)
                                         } catch (error: Exception) {
-                                            dailyReadingError = error.message
-                                                ?: "Günlük yorum şu anda hazırlanamadı."
+                                            premiumDailyReadingError = error.message
+                                                ?: "Kişisel Premium yorum şu anda hazırlanamadı."
                                         } finally {
-                                            dailyReadingLoading = false
+                                            premiumDailyReadingLoading = false
                                         }
                                     }
                                 }
@@ -529,12 +619,31 @@ fun OlimoraApp() {
             OlimoraScreen.Settings -> SettingsScreen(
                 accountEmail = sessionStore.email(),
                 token = authToken,
+                profileName = name.ifBlank { "Gökyüzü Yolcusu" },
+                sunSign = chartResult?.sunSign,
+                moonSign = chartResult?.moonSign,
+                ascendantSign = chartResult?.ascendantSign,
                 onEditProfile = { screen = OlimoraScreen.BirthForm },
                 onAbout = { screen = OlimoraScreen.About },
                 onLogout = {
                     sessionStore.clear()
                     authToken = null
                     screen = OlimoraScreen.Login
+                },
+                onAccountDeleted = {
+                    sessionStore.clear()
+                    authToken = null
+                    chartResult = null
+                    screen = OlimoraScreen.Login
+                },
+                betaPremiumEnabled = betaPremiumEnabled,
+                onBetaPremiumChange = { enabled ->
+                    betaPremiumEnabled = enabled
+                    experiencePreferences.edit().putBoolean("beta_premium_enabled", enabled).apply()
+                    if (!enabled) {
+                        premiumDailyReading = null
+                        premiumDailyReadingError = null
+                    }
                 },
                 onBack = {
                     screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
@@ -546,6 +655,69 @@ fun OlimoraApp() {
             })
         }
     }
+    if (screen == OlimoraScreen.ChartResult && onboardingStep >= 0) {
+        OlimoraOnboardingDialog(
+            step = onboardingStep,
+            onNext = {
+                if (onboardingStep < 2) {
+                    onboardingStep += 1
+                } else {
+                    experiencePreferences.edit().putBoolean("intro_seen", true).apply()
+                    onboardingStep = -1
+                }
+            },
+            onSkip = {
+                experiencePreferences.edit().putBoolean("intro_seen", true).apply()
+                onboardingStep = -1
+            },
+        )
+    }
+}
+
+@Composable
+private fun OlimoraOnboardingDialog(step: Int, onNext: () -> Unit, onSkip: () -> Unit) {
+    val pages = listOf(
+        Triple("✦", "Haritan hep seninle", "Doğum bilgilerin hesabında saklanır. Güneş, Ay ve yükselen sonuçlarına yeniden bilgi girmeden ulaşabilirsin."),
+        Triple("☾", "Her gün yeni bir gökyüzü", "Günlük yorumun yalnızca istediğinde hazırlanır. Kalıcı harita özetiyle günlük yorumu artık kolayca ayırt edebilirsin."),
+        Triple("☺", "Arkadaşların bir kaydırma uzakta", "Harita ekranını sola kaydırarak arkadaşlarına, mesajlarına ve yeni isteklerine geçebilirsin."),
+    )
+    val page = pages[step.coerceIn(pages.indices)]
+    AlertDialog(
+        onDismissRequest = {},
+        icon = {
+            Box(
+                modifier = Modifier.size(58.dp).background(PrimaryPurple.copy(alpha = 0.13f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text(page.first, color = Gold, fontSize = 27.sp) }
+        },
+        title = { Text(page.second, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(page.third, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    repeat(3) { index ->
+                        Box(
+                            Modifier.size(if (index == step) 20.dp else 7.dp, 7.dp)
+                                .background(
+                                    if (index == step) PrimaryPurple else MaterialTheme.colorScheme.outline,
+                                    CircleShape,
+                                )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onNext, colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)) {
+                Text(if (step == 2) "Olimora’yı keşfet" else "Devam")
+            }
+        },
+        dismissButton = { TextButton(onClick = onSkip) { Text("Atla") } },
+        shape = RoundedCornerShape(24.dp),
+    )
 }
 
 @Composable
@@ -577,33 +749,51 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
         )
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = {
+                email = it.trim().lowercase()
+                error = null
+            },
             label = { Text("E-posta") },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = {
+                password = it
+                error = null
+            },
             label = { Text("Şifre (en az 8 karakter)") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
         if (registerMode) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = passwordConfirmation,
-                onValueChange = { passwordConfirmation = it },
+                onValueChange = {
+                    passwordConfirmation = it
+                    error = null
+                },
                 label = { Text("Şifreyi tekrar yaz") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                isError = passwordConfirmation.isNotEmpty() && password != passwordConfirmation,
+                supportingText = {
+                    if (passwordConfirmation.isNotEmpty() && password != passwordConfirmation) {
+                        Text("Şifreler henüz eşleşmiyor.")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        error?.let {
-            Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error)
+        error?.let { message ->
+            StatusNotice(message = message, isError = true, modifier = Modifier.padding(top = 10.dp))
         }
         Button(
             onClick = {
@@ -616,7 +806,7 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
                     error = null
                     coroutineScope.launch {
                         try {
-                            onAuthenticated(authenticate(email, password, registerMode))
+                            onAuthenticated(authenticate(email.trim(), password, registerMode))
                         } catch (failure: Exception) {
                             error = failure.message ?: "Hesaba bağlanılamadı."
                         } finally {
@@ -746,8 +936,33 @@ private fun OlimoraHeader(
 
 @Composable
 private fun LoadingScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Gökyüzün hazırlanıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Box(modifier = Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.08f)),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 30.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(52.dp),
+                        color = PrimaryPurple,
+                        strokeWidth = 3.dp,
+                    )
+                    Text("✦", color = Gold, fontSize = 22.sp)
+                }
+                Text("Athena gökyüzünü hazırlıyor", modifier = Modifier.padding(top = 10.dp), fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Haritan ve kayıtlı bilgilerin getiriliyor…",
+                    modifier = Modifier.padding(top = 5.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 
@@ -876,11 +1091,10 @@ private fun BirthFormScreen(
             )
         }
         calculationError?.let { error ->
-            Text(
-                text = error,
+            StatusNotice(
+                message = error,
+                isError = true,
                 modifier = Modifier.padding(top = 10.dp),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
             )
         }
         Spacer(Modifier.height(24.dp))
@@ -947,9 +1161,10 @@ private fun SelectionField(
     value: String,
     options: List<String>,
     onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
+    Box(modifier) {
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier
@@ -1000,33 +1215,67 @@ private fun ChartResultScreen(
     chartResult: BigThreeResult,
     athenaInterpretation: String?,
     isAthenaLoading: Boolean,
-    dailyReading: DailyReading?,
-    dailyReadingLoading: Boolean,
-    dailyReadingError: String?,
     dailySignReading: DailySignReading?,
     dailySignReadingLoading: Boolean,
     dailySignReadingError: String?,
     onRequestDailySignReading: () -> Unit,
-    onRequestDailyReading: () -> Unit,
+    betaPremiumEnabled: Boolean,
+    premiumDailyReading: DailyReading?,
+    premiumDailyReadingLoading: Boolean,
+    premiumDailyReadingError: String?,
+    onRequestPremiumDailyReading: () -> Unit,
 ) {
+    val context = LocalContext.current
     var detailsExpanded by remember { mutableStateOf(false) }
+    val now = remember { Calendar.getInstance() }
+    val greeting = when (now.get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "Günaydın"
+        in 12..17 -> "İyi günler"
+        else -> "İyi akşamlar"
+    }
+    val todayLabel = remember {
+        SimpleDateFormat("d MMMM EEEE", Locale.forLanguageTag("tr-TR")).format(now.time)
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp),
     ) {
-        Text(
-            text = "Doğum haritan hazır",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            fontWeight = FontWeight.Medium,
-        )
-        Text(
-            text = "Gökyüzünün doğduğun andaki matematiksel görünümü.",
-            modifier = Modifier.padding(top = 7.dp, bottom = 18.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(PrimaryPurple.copy(alpha = 0.18f), Gold.copy(alpha = 0.10f))
+                        )
+                    )
+                    .padding(18.dp)
+            ) {
+                Column {
+                    Text(
+                        "$greeting, ${name.substringBefore(" ")}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        todayLabel.replaceFirstChar { it.uppercase() },
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "Gökyüzündeki yerin hazır.",
+                        modifier = Modifier.padding(top = 12.dp),
+                        color = PrimaryPurple,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
 
         Card(
             colors = CardDefaults.cardColors(containerColor = SoftSurface),
@@ -1047,9 +1296,9 @@ private fun ChartResultScreen(
                     Text("♓", color = Gold, fontSize = 32.sp)
                 }
                 Column(Modifier.padding(start = 15.dp)) {
-                    Text(name, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                    Text("$birthDate · $birthTime", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(place, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(name, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                    Text("$birthDate · $birthTime", color = Color.White.copy(alpha = 0.72f))
+                    Text(place, color = Color.White.copy(alpha = 0.72f))
                 }
             }
         }
@@ -1066,7 +1315,7 @@ private fun ChartResultScreen(
         }
 
         Text(
-            text = "Athena’nın kısa yorumu",
+            text = "Doğum haritanın özeti",
             modifier = Modifier.padding(top = 22.dp, bottom = 10.dp),
             fontWeight = FontWeight.Medium,
         )
@@ -1077,7 +1326,7 @@ private fun ChartResultScreen(
         ) {
             Column(Modifier.padding(15.dp)) {
                 Text(
-                    if (isAthenaLoading) "Athena haritanı okuyor…" else "Haritandaki üç ana iz",
+                    if (isAthenaLoading) "Athena haritanı okuyor…" else "Athena’nın temel okuması · Ücretsiz",
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
@@ -1095,13 +1344,13 @@ private fun ChartResultScreen(
         }
 
         Text(
-            text = "Burcunun bugünü",
+            text = "Bugünün yorumu",
             modifier = Modifier.padding(top = 22.dp, bottom = 6.dp),
             fontWeight = FontWeight.Medium,
             fontSize = 20.sp,
         )
         Text(
-            text = "${signName(chartResult.sunSign)} burcundaki herkesin paylaştığı kısa günlük yorum.",
+            text = "Yalnızca Güneş burcun olan ${signName(chartResult.sunSign)} için hazırlanır ve her gün yenilenir.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -1113,14 +1362,15 @@ private fun ChartResultScreen(
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
             ) {
-                Text(if (dailySignReadingLoading) "Burcunun bugünü hazırlanıyor…" else "Burcumun bugününü göster")
+                Text(if (dailySignReadingLoading) "Bugünün yorumu hazırlanıyor…" else "${signName(chartResult.sunSign)} günlük yorumumu göster")
             }
             dailySignReadingError?.let { message ->
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
+                StatusNotice(
+                    message = message,
+                    isError = true,
+                    modifier = Modifier.padding(top = 10.dp),
+                    actionLabel = "Tekrar dene",
+                    onAction = onRequestDailySignReading,
                 )
             }
         } else {
@@ -1134,49 +1384,30 @@ private fun ChartResultScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
+            OutlinedButton(
+                onClick = {
+                    shareDailySignReading(
+                        context = context,
+                        name = name,
+                        sign = signName(chartResult.sunSign),
+                        reading = dailySignReading,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(50.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("✦  Yorumumu paylaş")
+            }
         }
 
-        Text(
-            text = "Athena’nın sana özel bugünü",
-            modifier = Modifier.padding(top = 24.dp, bottom = 6.dp),
-            fontWeight = FontWeight.Medium,
-            fontSize = 20.sp,
+        PremiumInsightCard(
+            betaPremiumEnabled = betaPremiumEnabled,
+            reading = premiumDailyReading,
+            loading = premiumDailyReadingLoading,
+            error = premiumDailyReadingError,
+            onRequestReading = onRequestPremiumDailyReading,
         )
-        Text(
-            text = "Doğum haritan ve bugünün gökyüzü birlikte değerlendirilir; yalnızca istediğinde hazırlanır.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (dailyReading == null) {
-            Button(
-                onClick = onRequestDailyReading,
-                enabled = !dailyReadingLoading,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
-            ) {
-                Text(if (dailyReadingLoading) "Athena bugünü okuyor…" else "Bugünün yorumunu oluştur")
-            }
-            dailyReadingError?.let { message ->
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        } else {
-            DailyReadingCard("Günün teması", dailyReading.mainTheme)
-            DailyReadingCard("Aşk ve ilişkiler", dailyReading.relationships)
-            DailyReadingCard("İş ve para", dailyReading.workMoney)
-            DailyReadingCard("Dikkat", dailyReading.caution)
-            Text(
-                text = "${dailyReading.date} · Yatırım tavsiyesi değildir.",
-                modifier = Modifier.padding(top = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
+        ReadingHistoryPreview(todayReady = dailySignReading != null)
 
         Button(
             onClick = { detailsExpanded = !detailsExpanded },
@@ -1197,6 +1428,31 @@ private fun ChartResultScreen(
     }
 }
 
+private fun shareDailySignReading(
+    context: Context,
+    name: String,
+    sign: String,
+    reading: DailySignReading,
+) {
+    val shareText = buildString {
+        append("✦ OLIMORA · ")
+        append(sign.uppercase(Locale.forLanguageTag("tr-TR")))
+        append("\n\n")
+        append(name.substringBefore(" "))
+        append(" için bugünün teması:\n")
+        append(reading.mainTheme)
+        append("\n\nAşk ve ilişkiler:\n")
+        append(reading.relationships)
+        append("\n\nAstrolojik yorumlar eğlence ve öz farkındalık amaçlıdır.")
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "Olimora günlük yorumum")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(intent, "Olimora yorumunu paylaş"))
+}
+
 @Composable
 private fun DailyReadingCard(title: String, text: String) {
     Card(
@@ -1212,6 +1468,204 @@ private fun DailyReadingCard(title: String, text: String) {
                 modifier = Modifier.padding(top = 5.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun PremiumInsightCard(
+    betaPremiumEnabled: Boolean,
+    reading: DailyReading?,
+    loading: Boolean,
+    error: String?,
+    onRequestReading: () -> Unit,
+) {
+    Text(
+        text = "Athena Premium",
+        modifier = Modifier.padding(top = 26.dp, bottom = 8.dp),
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.65f)),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            PrimaryPurple.copy(alpha = 0.16f),
+                            Gold.copy(alpha = 0.10f),
+                            MaterialTheme.colorScheme.surface,
+                        )
+                    )
+                )
+                .padding(18.dp),
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(Gold.copy(alpha = 0.18f), RoundedCornerShape(50.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            "✦ PREMIUM",
+                            color = Color(0xFF9A6812),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Spacer(Modifier.width(9.dp))
+                    Text("Sana özel derin okuma", fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "Doğum haritan, güncel gezegen hareketleri ve kişisel temaların birlikte yorumlanır.",
+                    modifier = Modifier.padding(top = 13.dp, bottom = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                PremiumBenefit("Kişisel günlük ve haftalık analiz")
+                PremiumBenefit("İlişki, iş ve duygusal enerji başlıkları")
+                PremiumBenefit("Daha uzun Athena yorumları")
+                OutlinedButton(
+                    onClick = onRequestReading,
+                    enabled = betaPremiumEnabled && !loading,
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text(
+                        when {
+                            loading -> "Athena kişisel yorumunu hazırlıyor…"
+                            betaPremiumEnabled && reading == null -> "Beta Premium yorumumu hazırla"
+                            betaPremiumEnabled -> "Premium yorumumu yenile"
+                            else -> "Premium yakında"
+                        }
+                    )
+                }
+                Text(
+                    if (betaPremiumEnabled) {
+                        "Beta Premium test erişimin açık. Bu özellik senden ücret almaz."
+                    } else {
+                        "Ödeme sistemi açılmadan senden ücret alınmaz."
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                )
+                error?.let { message ->
+                    StatusNotice(
+                        message = message,
+                        isError = true,
+                        modifier = Modifier.padding(top = 10.dp),
+                        actionLabel = "Tekrar dene",
+                        onAction = onRequestReading,
+                    )
+                }
+                reading?.let { premium ->
+                    Text(
+                        "Bugüne özel kişisel okuman",
+                        modifier = Modifier.padding(top = 18.dp, bottom = 2.dp),
+                        color = PrimaryPurple,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    PremiumReadingSection("Ana tema", premium.mainTheme)
+                    PremiumReadingSection("İlişkiler", premium.relationships)
+                    PremiumReadingSection("İş ve para", premium.workMoney)
+                    PremiumReadingSection("Dikkat etmen gereken", premium.caution)
+                    Text(
+                        "${premium.date} · Kişisel doğum haritana göre hazırlanmıştır.",
+                        modifier = Modifier.padding(top = 9.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PremiumReadingSection(title: String, body: String) {
+    Column(Modifier.padding(top = 12.dp)) {
+        Text(title, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+        Text(
+            body,
+            modifier = Modifier.padding(top = 3.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun PremiumBenefit(text: String) {
+    Row(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("✦", color = Gold, fontSize = 13.sp)
+        Text(
+            text,
+            modifier = Modifier.padding(start = 9.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun ReadingHistoryPreview(todayReady: Boolean) {
+    val days = remember {
+        List(7) { offset ->
+            Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset - 6) }
+        }
+    }
+    Text(
+        "Yorum geçmişin",
+        modifier = Modifier.padding(top = 26.dp, bottom = 5.dp),
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+    )
+    Text(
+        "Bugün ücretsiz; önceki günlerin arşivi Premium ile açılır.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        days.forEachIndexed { index, day ->
+            val isToday = index == days.lastIndex
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isToday) PrimaryPurple.copy(alpha = 0.12f)
+                    else MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (isToday) PrimaryPurple.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline,
+                ),
+                shape = RoundedCornerShape(15.dp),
+            ) {
+                Column(
+                    modifier = Modifier.width(66.dp).padding(vertical = 11.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(SimpleDateFormat("EEE", Locale.forLanguageTag("tr-TR")).format(day.time), fontSize = 11.sp)
+                    Text(day.get(Calendar.DAY_OF_MONTH).toString(), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                    Text(
+                        if (isToday && todayReady) "✓" else if (isToday) "Bugün" else "🔒",
+                        color = if (isToday) PrimaryPurple else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                    )
+                }
+            }
         }
     }
 }
@@ -1259,15 +1713,35 @@ private fun ChartPagerNavigation(
 private fun SettingsScreen(
     accountEmail: String?,
     token: String?,
+    profileName: String,
+    sunSign: String?,
+    moonSign: String?,
+    ascendantSign: String?,
     onEditProfile: () -> Unit,
     onAbout: () -> Unit,
     onLogout: () -> Unit,
+    onAccountDeleted: () -> Unit,
+    betaPremiumEnabled: Boolean,
+    onBetaPremiumChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    var myOlimoraId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+    var myProfile by remember { mutableStateOf<SocialUser?>(null) }
+    var statusUpdating by remember { mutableStateOf(false) }
+    var showAiInfo by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var deletingAccount by remember { mutableStateOf(false) }
+    var settingsMessage by remember { mutableStateOf<String?>(null) }
+    var settingsMessageIsError by remember { mutableStateOf(false) }
+    val statusOptions = listOf(
+        "Gökyüzünü dinliyor ✦",
+        "Bugün biraz sessiz ☾",
+        "Yeni başlangıçlara açık",
+        "Kendime zaman ayırıyorum",
+    )
     LaunchedEffect(token) {
-        myOlimoraId = token?.let { runCatching { fetchSocialOverview(it).me.olimoraId }.getOrNull() }
+        myProfile = token?.let { runCatching { fetchSocialOverview(it).me }.getOrNull() }
     }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -1275,34 +1749,71 @@ private fun SettingsScreen(
     ) {
         TextButton(onClick = onBack) { Text("‹ Haritama dön") }
         Text("Ayarlar", style = MaterialTheme.typography.headlineMedium)
-        accountEmail?.let {
-            Text(
-                it,
-                modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        myOlimoraId?.let { olimoraId ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
-                colors = CardDefaults.cardColors(containerColor = SoftSurface),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Olimora kimliğin", fontWeight = FontWeight.Medium)
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp),
+            colors = CardDefaults.cardColors(containerColor = SoftSurface),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(54.dp).background(Color.White.copy(alpha = 0.14f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(profileName.take(1).uppercase(), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column(Modifier.padding(start = 13.dp)) {
+                        Text(profileName, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                        Text(accountEmail.orEmpty(), color = Color.White.copy(alpha = 0.68f), style = MaterialTheme.typography.bodySmall)
+                        myProfile?.olimoraId?.let {
+                            Text(it, color = Gold, modifier = Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                if (sunSign != null && moonSign != null && ascendantSign != null) {
                     Text(
-                        olimoraId,
-                        modifier = Modifier.padding(top = 4.dp),
-                        color = PrimaryPurple,
-                    )
-                    Text(
-                        "Arkadaşlarının seni bulması için bu kimliği paylaşabilirsin.",
-                        modifier = Modifier.padding(top = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "${signName(sunSign)} Güneş  ·  ${signName(moonSign)} Ay  ·  ${signName(ascendantSign)} Yükselen",
+                        modifier = Modifier.padding(top = 14.dp),
+                        color = Color.White.copy(alpha = 0.82f),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
+        }
+
+        Text("Profil", fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 9.dp))
+        SelectionField(
+            label = "Kısa durumun",
+            value = myProfile?.statusMessage ?: "Bir durum seç",
+            options = statusOptions,
+            onSelected = { selected ->
+                val currentToken = token ?: return@SelectionField
+                statusUpdating = true
+                coroutineScope.launch {
+                    runCatching { updateSocialStatus(currentToken, selected) }
+                        .onSuccess {
+                            myProfile = myProfile?.copy(statusMessage = selected)
+                            settingsMessage = "Durumun güncellendi."
+                            settingsMessageIsError = false
+                        }
+                        .onFailure {
+                            settingsMessage = it.message ?: "Durum güncellenemedi."
+                            settingsMessageIsError = true
+                        }
+                    statusUpdating = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        )
+        if (statusUpdating) {
+            Text("Durumun güncelleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        settingsMessage?.let { message ->
+            StatusNotice(
+                message = message,
+                isError = settingsMessageIsError,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
         }
         SettingsAction(
             title = "Doğum profilimi düzenle",
@@ -1320,15 +1831,108 @@ private fun SettingsScreen(
             },
         )
         SettingsAction(
+            title = if (betaPremiumEnabled) "Beta Premium · Açık" else "Beta Premium'u dene",
+            description = if (betaPremiumEnabled) {
+                "Kişisel Premium yorumları test edebilirsin; ücret alınmaz"
+            } else {
+                "Ödeme yapmadan Premium yorum akışını test için etkinleştir"
+            },
+            onClick = { onBetaPremiumChange(!betaPremiumEnabled) },
+        )
+        Text("Gizlilik ve güven", fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(top = 10.dp, bottom = 9.dp))
+        SettingsAction(
+            title = "AI nasıl kullanılıyor?",
+            description = "Athena’nın hangi verileri yorumladığını açıkça gör",
+            onClick = { showAiInfo = true },
+        )
+        SettingsAction(
             title = "Hakkında ve destek",
             description = "Açık kaynak, lisans, destek ve sürüm bilgileri",
             onClick = onAbout,
+        )
+        SettingsAction(
+            title = "Hesabımı ve verilerimi sil",
+            description = "Profilini, mesaj bağlantılarını ve kayıtlı haritanı kalıcı olarak kaldır",
+            onClick = { showDeleteConfirmation = true },
         )
         OutlinedButton(
             onClick = onLogout,
             modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
             shape = RoundedCornerShape(14.dp),
         ) { Text("Çıkış yap") }
+    }
+
+    if (showAiInfo) {
+        AlertDialog(
+            onDismissRequest = { showAiInfo = false },
+            title = { Text("Athena ve verilerin") },
+            text = {
+                Text("Athena; doğum tarihi, saat, konum ve astroloji motorunun ürettiği matematiksel yerleşimleri yorumlar. Arkadaş mesajların ve paylaştığın fotoğraflar AI yorumuna gönderilmez.")
+            },
+            confirmButton = { TextButton(onClick = { showAiInfo = false }) { Text("Anladım") } },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { if (!deletingAccount) showDeleteConfirmation = false },
+            title = { Text("Hesabın kalıcı olarak silinsin mi?") },
+            text = { Text("Bu işlem geri alınamaz. Doğum profilin, haritan ve sosyal bağlantıların sunucudan kaldırılır.") },
+            confirmButton = {
+                Button(
+                    enabled = !deletingAccount,
+                    onClick = {
+                        val currentToken = token ?: return@Button
+                        deletingAccount = true
+                        coroutineScope.launch {
+                            runCatching { deleteAccount(currentToken) }
+                                .onSuccess { onAccountDeleted() }
+                                .onFailure {
+                                    settingsMessage = it.message ?: "Hesap şu anda silinemedi. Lütfen tekrar dene."
+                                    settingsMessageIsError = true
+                                    deletingAccount = false
+                                    showDeleteConfirmation = false
+                                }
+                        }
+                    },
+                ) { Text(if (deletingAccount) "Siliniyor…" else "Evet, kalıcı olarak sil") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmation = false }) { Text("Vazgeç") } },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun StatusNotice(
+    message: String,
+    isError: Boolean,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val accent = if (isError) MaterialTheme.colorScheme.error else Color(0xFF2E7D5B)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(if (isError) "!" else "✓", color = accent, fontWeight = FontWeight.Bold)
+            Text(
+                message,
+                modifier = Modifier.weight(1f).padding(start = 9.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (actionLabel != null && onAction != null) {
+                TextButton(onClick = onAction) { Text(actionLabel, color = accent) }
+            }
+        }
     }
 }
 
@@ -1370,12 +1974,16 @@ private fun SocialScreen(token: String) {
     LaunchedEffect(refreshKey) {
         loading = true
         error = null
-        try {
-            overview = fetchSocialOverview(token)
-        } catch (exception: Exception) {
-            error = exception.message ?: "Arkadaşlar yüklenemedi."
-        } finally {
-            loading = false
+        while (true) {
+            try {
+                overview = fetchSocialOverview(token)
+                error = null
+            } catch (exception: Exception) {
+                error = exception.message ?: "Arkadaşlar yüklenemedi."
+            } finally {
+                loading = false
+            }
+            delay(30_000)
         }
     }
 
@@ -1445,11 +2053,12 @@ private fun SocialScreen(token: String) {
         }
 
         error?.let { message ->
-            Text(
-                message,
+            StatusNotice(
+                message = message,
+                isError = true,
                 modifier = Modifier.padding(top = 10.dp),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                actionLabel = "Tekrar dene",
+                onAction = { refreshKey += 1 },
             )
         }
         if (loading) {
@@ -1533,16 +2142,39 @@ private fun SocialScreen(token: String) {
 }
 
 @Composable
-private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> Unit) {
+private fun ConversationScreen(
+    token: String,
+    friend: SocialUser,
+    onBack: () -> Unit,
+    previewMessages: List<DirectMessage>? = null,
+) {
     val coroutineScope = rememberCoroutineScope()
-    var messages by remember(friend.id) { mutableStateOf<List<DirectMessage>>(emptyList()) }
+    var messages by remember(friend.id) { mutableStateOf(previewMessages.orEmpty()) }
     var draft by remember(friend.id) { mutableStateOf("") }
     var loading by remember(friend.id) { mutableStateOf(true) }
     var error by remember(friend.id) { mutableStateOf<String?>(null) }
     var refreshKey by remember(friend.id) { mutableStateOf(0) }
+    var sending by remember(friend.id) { mutableStateOf(false) }
     val messageListState = rememberLazyListState()
+    var liveFriend by remember(friend.id) { mutableStateOf(friend) }
+
+    LaunchedEffect(friend.id) {
+        if (previewMessages != null) return@LaunchedEffect
+        while (true) {
+            runCatching { fetchSocialOverview(token) }
+                .getOrNull()
+                ?.friends
+                ?.firstOrNull { it.id == friend.id }
+                ?.let { liveFriend = it }
+            delay(20_000)
+        }
+    }
 
     LaunchedEffect(friend.id, refreshKey) {
+        if (previewMessages != null) {
+            loading = false
+            return@LaunchedEffect
+        }
         loading = true
         while (true) {
             try {
@@ -1563,20 +2195,65 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Geri") }
-            Column(Modifier.weight(1f)) {
-                Text(friend.displayName, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                Text(friend.olimoraId, style = MaterialTheme.typography.bodySmall)
+    val conversationBackground = Brush.verticalGradient(
+        listOf(
+            PrimaryPurple.copy(alpha = 0.10f),
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.background,
+        )
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(conversationBackground)
+            .padding(horizontal = 14.dp),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("‹", color = PrimaryPurple, fontSize = 30.sp)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(PrimaryPurple.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        liveFriend.displayName.take(1).uppercase(),
+                        color = PrimaryPurple,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 18.sp,
+                    )
+                }
+                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                    Text(liveFriend.displayName, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Text(
+                        formatPresence(liveFriend),
+                        color = if (liveFriend.isOnline) Color(0xFF2E9B62)
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = { refreshKey += 1 }) {
+                    Text("↻", color = PrimaryPurple, fontSize = 23.sp)
+                }
             }
-            TextButton(onClick = { refreshKey += 1 }) { Text("Yenile") }
         }
         LazyColumn(
             state = messageListState,
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Bottom,
         ) {
+            item { CompatibilityPreviewCard(friendName = liveFriend.displayName) }
             if (loading && messages.isEmpty()) {
                 item {
                     Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1585,43 +2262,107 @@ private fun ConversationScreen(token: String, friend: SocialUser, onBack: () -> 
             items(messages.size, key = { messages[it].id }) { index ->
                 MessageBubble(messages[index])
             }
-            error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
+            error?.let { message ->
+                item {
+                    StatusNotice(
+                        message = message,
+                        isError = true,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        actionLabel = "Yenile",
+                        onAction = { refreshKey += 1 },
+                    )
+                }
+            }
             item { Spacer(Modifier.height(8.dp)) }
         }
-        Row(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
                 .padding(vertical = 10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { if (it.length <= 2000) draft = it },
+                    placeholder = { Text("Mesaj yaz…") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 4,
+                    supportingText = {
+                        if (draft.length >= 1800) {
+                            Text("${draft.length}/2000", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+                        }
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Button(
+                    onClick = {
+                        val body = draft.trim()
+                        if (body.isEmpty()) return@Button
+                        sending = true
+                        draft = ""
+                        coroutineScope.launch {
+                            try {
+                                sendDirectMessage(token, friend.id, body)
+                                refreshKey += 1
+                            } catch (exception: Exception) {
+                                draft = body
+                                error = exception.message
+                            } finally {
+                                sending = false
+                            }
+                        }
+                    },
+                    enabled = draft.isNotBlank() && !sending,
+                    modifier = Modifier.size(50.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                ) {
+                    if (sending) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text("➤", fontSize = 19.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompatibilityPreviewCard(friendName: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, Gold.copy(alpha = 0.45f)),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { if (it.length <= 2000) draft = it },
-                placeholder = { Text("Mesaj yaz…") },
-                modifier = Modifier.weight(1f),
-                maxLines = 4,
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    val body = draft.trim()
-                    if (body.isEmpty()) return@Button
-                    draft = ""
-                    coroutineScope.launch {
-                        try {
-                            sendDirectMessage(token, friend.id, body)
-                            refreshKey += 1
-                        } catch (exception: Exception) {
-                            draft = body
-                            error = exception.message
-                        }
-                    }
-                },
-                enabled = draft.isNotBlank(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
-            ) { Text("Gönder") }
+            Text("✦", color = Gold, fontSize = 22.sp)
+            Column(Modifier.weight(1f).padding(horizontal = 11.dp)) {
+                Text("$friendName ile haritalarınızı karşılaştır", fontWeight = FontWeight.Medium)
+                Text(
+                    "İletişim, duygu ve ortak enerji başlıkları",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text("Premium", color = Color(0xFF9A6812), fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1633,12 +2374,26 @@ private fun MessageBubble(message: DirectMessage) {
         horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(0.78f),
+            modifier = Modifier.widthIn(max = 286.dp),
             colors = CardDefaults.cardColors(
                 containerColor = if (message.isMine) PrimaryPurple else MaterialTheme.colorScheme.surface
             ),
             border = if (message.isMine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            shape = RoundedCornerShape(16.dp),
+            shape = if (message.isMine) {
+                RoundedCornerShape(
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = 18.dp,
+                    bottomEnd = 5.dp,
+                )
+            } else {
+                RoundedCornerShape(
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = 5.dp,
+                    bottomEnd = 18.dp,
+                )
+            },
         ) {
             Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
                 Text(
@@ -1677,6 +2432,31 @@ private fun formatMessageTime(value: String): String {
     return SimpleDateFormat("HH:mm", Locale.getDefault()).format(parsed)
 }
 
+private fun formatPresence(friend: SocialUser): String {
+    if (friend.isOnline) return "● Çevrimiçi · Olimora'da"
+    val value = friend.lastSeenAt ?: return "Henüz aktiflik bilgisi yok"
+    val normalized = value.replace(
+        Regex("\\.(\\d{3})\\d*(Z|[+-]\\d{2}:\\d{2})$"),
+        ".$1$2",
+    )
+    val parsed = listOf("yyyy-MM-dd'T'HH:mm:ss.SSSX", "yyyy-MM-dd'T'HH:mm:ssX")
+        .firstNotNullOfOrNull { pattern ->
+            runCatching {
+                SimpleDateFormat(pattern, Locale.US).apply {
+                    isLenient = false
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }.parse(normalized)
+            }.getOrNull()
+        } ?: return "Son görülme bilinmiyor"
+    val minutes = ((System.currentTimeMillis() - parsed.time).coerceAtLeast(0) / 60_000).toInt()
+    return when {
+        minutes < 1 -> "Az önce görüldü"
+        minutes < 60 -> "Son görülme ${minutes} dk önce"
+        minutes < 24 * 60 -> "Son görülme ${minutes / 60} sa önce"
+        else -> "Son görülme " + SimpleDateFormat("dd.MM · HH:mm", Locale.getDefault()).format(parsed)
+    }
+}
+
 @Composable
 private fun SocialSectionTitle(text: String) {
     Text(
@@ -1701,10 +2481,18 @@ private fun FriendRow(friend: SocialUser, onClick: () -> Unit) {
         ) { Text(friend.displayName.take(1).uppercase(), color = Gold) }
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(friend.displayName, color = MaterialTheme.colorScheme.onSurface)
+            friend.statusMessage?.let { status ->
+                Text(
+                    status,
+                    color = PrimaryPurple,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Text(
-                friend.olimoraId,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
+                formatPresence(friend),
+                color = if (friend.isOnline) Color(0xFF2E9B62)
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp,
             )
         }
         Text("Sohbet ›", color = PrimaryPurple)

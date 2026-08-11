@@ -60,3 +60,12 @@ async def login(
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[UserModel, Depends(get_current_user)]) -> UserResponse:
     return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+
+
+@router.delete("/me", status_code=204)
+async def delete_me(
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> None:
+    await session.delete(user)
+    await session.commit()

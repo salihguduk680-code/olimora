@@ -20,6 +20,19 @@ class SocialUserResponse(BaseModel):
     display_name: str
     olimora_id: str
     unread_count: int = 0
+    is_online: bool = False
+    last_seen_at: datetime | None = None
+    status_message: str | None = None
+
+
+class StatusUpdate(BaseModel):
+    status_message: str | None = Field(default=None, max_length=60)
+
+    @field_validator("status_message")
+    @classmethod
+    def clean_status(cls, value: str | None) -> str | None:
+        cleaned = value.strip() if value else ""
+        return cleaned or None
 
 
 class FriendRequestResponse(BaseModel):

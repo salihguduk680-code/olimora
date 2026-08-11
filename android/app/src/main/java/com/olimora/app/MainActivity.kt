@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -432,6 +433,10 @@ fun OlimoraApp() {
                 name = name,
                 onNameChange = { name = it },
                 birthDate = birthDate,
+                onBirthDateChange = { input ->
+                    birthDate = formatDateInput(input)
+                    calculationError = null
+                },
                 onBirthDateClick = {
                     val parts = birthDate.split(".").mapNotNull { it.toIntOrNull() }
                     val calendar = Calendar.getInstance()
@@ -449,6 +454,10 @@ fun OlimoraApp() {
                     }, year, month, day).show()
                 },
                 birthTime = birthTime,
+                onBirthTimeChange = { input ->
+                    birthTime = formatTimeInput(input)
+                    calculationError = null
+                },
                 onBirthTimeClick = {
                     val parts = birthTime.split(":").mapNotNull { it.toIntOrNull() }
                     TimePickerDialog(context, { _, hour, minute ->
@@ -972,8 +981,10 @@ private fun BirthFormScreen(
     name: String,
     onNameChange: (String) -> Unit,
     birthDate: String,
+    onBirthDateChange: (String) -> Unit,
     onBirthDateClick: () -> Unit,
     birthTime: String,
+    onBirthTimeChange: (String) -> Unit,
     onBirthTimeClick: () -> Unit,
     country: String,
     countryOptions: List<String>,
@@ -1017,6 +1028,8 @@ private fun BirthFormScreen(
                 PickerField(
                     label = "Doğum tarihi",
                     value = birthDate,
+                    placeholder = "GG.AA.YYYY",
+                    onValueChange = onBirthDateChange,
                     onClick = onBirthDateClick,
                 )
             }
@@ -1024,6 +1037,8 @@ private fun BirthFormScreen(
                 PickerField(
                     label = "Doğum saati",
                     value = birthTime,
+                    placeholder = "SS:DD",
+                    onValueChange = onBirthTimeChange,
                     onClick = onBirthTimeClick,
                 )
             }
@@ -1105,32 +1120,31 @@ private fun BirthFormScreen(
 private fun PickerField(
     label: String,
     value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(
-        onClick = onClick,
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
+        singleLine = true,
         shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 14.dp),
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.Start,
-        ) {
-            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                text = value.ifBlank { "Seç" },
-                color = if (value.isBlank()) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
-        }
-        Text("⌄", color = Gold, fontSize = 18.sp)
-    }
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        trailingIcon = {
+            TextButton(onClick = onClick, contentPadding = PaddingValues(4.dp)) {
+                Text("Seç", color = PrimaryPurple, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = PrimaryPurple,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
 }
 
 @Composable
@@ -1164,9 +1178,18 @@ private fun SelectionField(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val filteredOptions = remember(options, query) {
+        if (query.isBlank()) options else options.filter {
+            it.contains(query.trim(), ignoreCase = true)
+        }
+    }
     Box(modifier) {
         OutlinedButton(
-            onClick = { expanded = true },
+            onClick = {
+                query = ""
+                expanded = true
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -1189,20 +1212,58 @@ private fun SelectionField(
             }
             Text("⌄", color = Gold, fontSize = 18.sp)
         }
-        DropdownMenu(
-            expanded = expanded,
+    }
+    if (expanded) {
+        AlertDialog(
             onDismissRequest = { expanded = false },
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onSelected(option)
-                        expanded = false
-                    },
-                )
-            }
-        }
+            title = { Text("$label seç") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Ara") },
+                        placeholder = { Text("Yazarak seçenekleri filtrele") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(top = 8.dp),
+                    ) {
+                        if (filteredOptions.isEmpty()) {
+                            item {
+                                Text(
+                                    "Eşleşen seçenek bulunamadı.",
+                                    modifier = Modifier.padding(vertical = 18.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        items(filteredOptions.size) { index ->
+                            val option = filteredOptions[index]
+                            TextButton(
+                                onClick = {
+                                    onSelected(option)
+                                    expanded = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp),
+                            ) {
+                                Text(
+                                    option,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Start,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { expanded = false }) { Text("Kapat") } },
+            shape = RoundedCornerShape(22.dp),
+        )
     }
 }
 
@@ -2769,6 +2830,26 @@ private fun toApiLocalDateTime(date: String, time: String): String? {
     val input = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.ROOT).apply { isLenient = false }
     val parsed = input.parse("$date $time") ?: return null
     return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).format(parsed)
+}
+
+private fun formatDateInput(value: String): String {
+    val digits = value.filter(Char::isDigit).take(8)
+    return buildString {
+        digits.forEachIndexed { index, char ->
+            if (index == 2 || index == 4) append('.')
+            append(char)
+        }
+    }
+}
+
+private fun formatTimeInput(value: String): String {
+    val digits = value.filter(Char::isDigit).take(4)
+    return buildString {
+        digits.forEachIndexed { index, char ->
+            if (index == 2) append(':')
+            append(char)
+        }
+    }
 }
 
 private fun signName(sign: String): String = mapOf(

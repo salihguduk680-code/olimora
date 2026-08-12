@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth_dependencies import get_current_user
@@ -10,6 +10,7 @@ from app.api.v1.schemas.notifications import (
     FirebaseInstallationCreate,
     FirebaseInstallationResponse,
 )
+from app.core.config import get_settings
 from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import FirebaseInstallationModel, UserModel
 
@@ -41,6 +42,21 @@ async def register_installation(
         installation.updated_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(installation)
+    stale_ids = list(
+        (
+            await session.execute(
+                select(FirebaseInstallationModel.id)
+                .where(FirebaseInstallationModel.user_id == user.id)
+                .order_by(FirebaseInstallationModel.updated_at.desc())
+                .offset(get_settings().max_push_installations_per_user)
+            )
+        ).scalars()
+    )
+    if stale_ids:
+        await session.execute(
+            delete(FirebaseInstallationModel).where(FirebaseInstallationModel.id.in_(stale_ids))
+        )
+        await session.commit()
     return FirebaseInstallationResponse(
         id=installation.id,
         fid=installation.fid,

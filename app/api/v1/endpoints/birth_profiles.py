@@ -17,6 +17,7 @@ from app.modules.astrology.domain.exceptions import (
 from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
     DailyReadingModel,
+    NatalInterpretationModel,
     UserModel,
 )
 from app.modules.astrology.infrastructure.repository import AstrologyRepository
@@ -55,8 +56,19 @@ def _response(profile: object) -> BirthProfileResponse:
 @router.post("/birth-profiles", response_model=BirthProfileResponse, status_code=201)
 async def create_birth_profile(
     request: BirthProfileCreateRequest,
+    user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> BirthProfileResponse:
+    existing = (
+        await session.execute(
+            select(BirthProfileModel.id).where(BirthProfileModel.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Kayıtlı doğum profilin zaten mevcut.",
+        )
     try:
         profile = await CreateBirthProfile(AstrologyRepository(session)).execute(
             name=request.name,
@@ -67,6 +79,7 @@ async def create_birth_profile(
             place_name=request.place_name,
             fold=request.fold,
             utc_offset_minutes=request.utc_offset_minutes,
+            user_id=user.id,
         )
     except AmbiguousTimeError as error:
         raise HTTPException(
@@ -127,6 +140,9 @@ async def save_my_birth_profile(
             ),
         )
     await session.execute(delete(DailyReadingModel).where(DailyReadingModel.user_id == user.id))
+    await session.execute(
+        delete(NatalInterpretationModel).where(NatalInterpretationModel.user_id == user.id)
+    )
     if existing is not None:
         user.last_birth_profile_change_at = now
         await session.delete(existing)

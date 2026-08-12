@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class FirebaseInstallationCreate(BaseModel):
-    fid: str = Field(min_length=10, max_length=255)
+    fid: str = Field(min_length=10, max_length=255, pattern=r"^[A-Za-z0-9_:\-]+$")
     platform: str = Field(default="android", pattern="^(android)$")
 
 

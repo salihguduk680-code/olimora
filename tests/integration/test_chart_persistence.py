@@ -12,8 +12,15 @@ from app.modules.astrology.infrastructure.models import NatalChartModel
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def _create_profile(client: AsyncClient) -> str:
-    unique_name = f"Concurrency Test {uuid.uuid4()}"
+async def _create_profile(client: AsyncClient) -> tuple[str, dict[str, str]]:
+    suffix = uuid.uuid4().hex
+    unique_name = f"Concurrency Test {suffix}"
+    registration = await client.post(
+        "/api/v1/auth/register",
+        json={"email": f"chart-{suffix}@example.com", "password": "TestPass123!"},
+    )
+    assert registration.status_code == 201
+    headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
     response = await client.post(
         "/api/v1/birth-profiles",
         json={
@@ -24,19 +31,24 @@ async def _create_profile(client: AsyncClient) -> str:
             "longitude": -87.6237,
             "place_name": "Art Institute of Chicago",
         },
+        headers=headers,
     )
     assert response.status_code == 201
-    return str(response.json()["id"])
+    return str(response.json()["id"]), headers
 
 
 async def test_repeated_chart_request_is_cached() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        profile_id = await _create_profile(client)
+        profile_id, headers = await _create_profile(client)
         first = await client.post(
-            f"/api/v1/birth-profiles/{profile_id}/natal-chart", json={"house_system": "P"}
+            f"/api/v1/birth-profiles/{profile_id}/natal-chart",
+            json={"house_system": "P"},
+            headers=headers,
         )
         second = await client.post(
-            f"/api/v1/birth-profiles/{profile_id}/natal-chart", json={"house_system": "P"}
+            f"/api/v1/birth-profiles/{profile_id}/natal-chart",
+            json={"house_system": "P"},
+            headers=headers,
         )
 
     assert first.status_code == 201
@@ -48,12 +60,13 @@ async def test_repeated_chart_request_is_cached() -> None:
 
 async def test_fifty_concurrent_requests_create_one_chart_row() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        profile_id = await _create_profile(client)
+        profile_id, headers = await _create_profile(client)
         responses = await asyncio.gather(
             *(
                 client.post(
                     f"/api/v1/birth-profiles/{profile_id}/natal-chart",
                     json={"house_system": "P"},
+                    headers=headers,
                 )
                 for _ in range(50)
             )
@@ -75,9 +88,16 @@ async def test_fifty_concurrent_requests_create_one_chart_row() -> None:
 async def test_unknown_birth_profile_returns_404() -> None:
     missing_profile_id = uuid.uuid4()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        suffix = uuid.uuid4().hex
+        registration = await client.post(
+            "/api/v1/auth/register",
+            json={"email": f"missing-{suffix}@example.com", "password": "TestPass123!"},
+        )
+        headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
         response = await client.post(
             f"/api/v1/birth-profiles/{missing_profile_id}/natal-chart",
             json={"house_system": "P"},
+            headers=headers,
         )
 
     assert response.status_code == 404

@@ -3,6 +3,7 @@ package com.olimora.app
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
@@ -220,11 +222,18 @@ class MainActivity : ComponentActivity() {
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = "Olimora arkadaşlarından gelen yeni mesajlar" }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            val reminderChannel = NotificationChannel(
+                DAILY_REMINDER_CHANNEL_ID,
+                "Günlük Olimora hatırlatmaları",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = "Günlük yorumuna bakmayı hatırlatan öğle bildirimi" }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(reminderChannel)
         }
     }
 }
 
 private const val MESSAGE_CHANNEL_ID = "olimora_messages"
+internal const val DAILY_REMINDER_CHANNEL_ID = "olimora_daily_reminders"
 
 internal fun Context.showMessageNotification(
     unreadCount: Int,
@@ -236,12 +245,21 @@ internal fun Context.showMessageNotification(
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
         PackageManager.PERMISSION_GRANTED
     ) return
+    val openAppIntent = PendingIntent.getActivity(
+        this,
+        2001,
+        Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
     val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_olimora_notification)
         .setColor(0xFF7B46AD.toInt())
         .setContentTitle(title)
         .setContentText(body)
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setContentIntent(openAppIntent)
         .setAutoCancel(true)
         .build()
     NotificationManagerCompat.from(this).notify(2001, notification)
@@ -277,6 +295,7 @@ fun OlimoraApp() {
     var premiumDailyReadingLoading by remember { mutableStateOf(false) }
     var premiumDailyReadingError by remember { mutableStateOf<String?>(null) }
     var unreadMessageCount by remember { mutableStateOf(0) }
+    var isConversationOpen by remember { mutableStateOf(false) }
     var lastNotifiedUnreadCount by remember { mutableStateOf(0) }
     val experiencePreferences = remember {
         context.getSharedPreferences("olimora_experience", Context.MODE_PRIVATE)
@@ -288,8 +307,26 @@ fun OlimoraApp() {
         mutableStateOf(experiencePreferences.getBoolean("beta_premium_enabled", false))
     }
 
+    LaunchedEffect(authToken) {
+        if (authToken == null) {
+            cancelDailyOlimoraReminder(context)
+        } else {
+            scheduleDailyOlimoraReminder(context)
+        }
+    }
+
     val selectedCountry: CountryLocation? = countries.firstOrNull { it.name == country }
     val provinces = selectedCountry?.provinces.orEmpty()
+
+    BackHandler(
+        enabled = !isConversationOpen && when (screen) {
+            OlimoraScreen.Settings, OlimoraScreen.About -> true
+            OlimoraScreen.BirthForm -> chartResult != null
+            else -> false
+        },
+    ) {
+        screen = OlimoraScreen.ChartResult
+    }
 
     LaunchedEffect(authToken) {
         val token = authToken ?: return@LaunchedEffect
@@ -342,6 +379,7 @@ fun OlimoraApp() {
             calculationError = null
             try {
                 chartResult = calculateBigThree(
+                    token = token,
                     localDateTime = saved.localDateTime,
                     timezone = saved.timezone,
                     latitude = saved.latitude,
@@ -352,6 +390,7 @@ fun OlimoraApp() {
                 isAthenaLoading = true
                 athenaInterpretation = runCatching {
                     generateAthenaInterpretation(
+                        token = token,
                         name = saved.name,
                         localDateTime = saved.localDateTime,
                         timezone = saved.timezone,
@@ -394,7 +433,7 @@ fun OlimoraApp() {
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        OlimoraHeader(
+        if (!isConversationOpen) OlimoraHeader(
             step = when (screen) {
                 OlimoraScreen.Login -> "HESAP"
                 OlimoraScreen.Loading -> ""
@@ -432,12 +471,12 @@ fun OlimoraApp() {
                 onNameChange = { name = it },
                 birthDate = birthDate,
                 onBirthDateChange = { input ->
-                    birthDate = formatDateInput(input)
+                    birthDate = formatDateInput(previous = birthDate, value = input)
                     calculationError = null
                 },
                 birthTime = birthTime,
                 onBirthTimeChange = { input ->
-                    birthTime = formatTimeInput(input)
+                    birthTime = formatTimeInput(previous = birthTime, value = input)
                     calculationError = null
                 },
                 country = country,
@@ -479,6 +518,7 @@ fun OlimoraApp() {
                             try {
                                 val placeName = "${selectedDistrict.name}, ${selectedProvince.name}, $country"
                                 chartResult = calculateBigThree(
+                                    token = authToken ?: error("Oturum gerekli."),
                                     localDateTime = localDateTime,
                                     timezone = selectedDistrict.timezone,
                                     latitude = selectedDistrict.latitude,
@@ -504,6 +544,7 @@ fun OlimoraApp() {
                                 isAthenaLoading = true
                                 try {
                                     athenaInterpretation = generateAthenaInterpretation(
+                                        token = authToken ?: error("Oturum gerekli."),
                                         name = name,
                                         localDateTime = localDateTime,
                                         timezone = selectedDistrict.timezone,
@@ -534,15 +575,26 @@ fun OlimoraApp() {
 
             OlimoraScreen.ChartResult -> {
                 val pagerState = rememberPagerState(pageCount = { 2 })
+                BackHandler(
+                    enabled = !isConversationOpen && pagerState.currentPage == 1,
+                ) {
+                    coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                }
                 Column(Modifier.fillMaxSize()) {
-                    ChartPagerNavigation(
-                        selectedPage = pagerState.currentPage,
-                        unreadCount = unreadMessageCount,
-                        onSelectPage = { page ->
-                            coroutineScope.launch { pagerState.animateScrollToPage(page) }
-                        },
-                    )
-                    HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+                    if (!isConversationOpen) {
+                        ChartPagerNavigation(
+                            selectedPage = pagerState.currentPage,
+                            unreadCount = unreadMessageCount,
+                            onSelectPage = { page ->
+                                coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                            },
+                        )
+                    }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.weight(1f),
+                        userScrollEnabled = !isConversationOpen,
+                    ) { page ->
                         if (page == 0) {
                             ChartResultScreen(
                             name = name.ifBlank { "Gökyüzü Yolcusu" },
@@ -594,7 +646,10 @@ fun OlimoraApp() {
                             )
                         } else {
                             authToken?.let { token ->
-                                SocialScreen(token = token)
+                                SocialScreen(
+                                    token = token,
+                                    onConversationChanged = { isConversationOpen = it },
+                                )
                             }
                         }
                     }
@@ -750,7 +805,12 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
                 password = it
                 error = null
             },
-            label = { Text("Şifre (en az 8 karakter)") },
+            label = {
+                Text(
+                    if (registerMode) "Şifre (10+ karakter, harf ve rakam)"
+                    else "Şifre"
+                )
+            },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -782,8 +842,12 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
         }
         Button(
             onClick = {
-                if (!email.contains("@") || password.length < 8) {
-                    error = "Geçerli bir e-posta ve en az 8 karakterli şifre gir."
+                val registrationPasswordValid = password.length >= 10 &&
+                    password.any(Char::isLetter) && password.any(Char::isDigit)
+                if (!email.contains("@") || (!registerMode && password.length < 8)) {
+                    error = "Geçerli bir e-posta ve şifre gir."
+                } else if (registerMode && !registrationPasswordValid) {
+                    error = "Yeni şifren en az 10 karakter, bir harf ve bir rakam içermeli."
                 } else if (registerMode && password != passwordConfirmation) {
                     error = "Yazdığın iki şifre birbiriyle aynı değil."
                 } else {
@@ -2176,13 +2240,25 @@ private fun SettingsAction(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SocialScreen(token: String) {
+private fun SocialScreen(
+    token: String,
+    onConversationChanged: (Boolean) -> Unit = {},
+) {
     val coroutineScope = rememberCoroutineScope()
     var overview by remember { mutableStateOf<SocialOverview?>(null) }
     var selectedFriend by remember { mutableStateOf<SocialUser?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
+
+    fun closeConversation() {
+        selectedFriend = null
+        onConversationChanged(false)
+    }
+
+    BackHandler(enabled = selectedFriend != null) {
+        closeConversation()
+    }
 
     LaunchedEffect(refreshKey) {
         loading = true
@@ -2204,13 +2280,14 @@ private fun SocialScreen(token: String) {
         ConversationScreen(
             token = token,
             friend = friend,
-            onBack = { selectedFriend = null },
+            onBack = { closeConversation() },
         )
         return
     }
 
     var friendOlimoraId by remember { mutableStateOf("") }
     var actionLoading by remember { mutableStateOf(false) }
+    var showAddFriend by remember { mutableStateOf(false) }
     PullToRefreshBox(
         isRefreshing = loading,
         onRefresh = { refreshKey += 1 },
@@ -2222,48 +2299,25 @@ private fun SocialScreen(token: String) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 22.dp),
         ) {
-        Text(
-            text = "Arkadaşların",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Medium,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Arkadaşların",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            TextButton(onClick = { showAddFriend = true }) {
+                Text("＋ Arkadaş ekle")
+            }
+        }
         Text(
             text = "Athena ekranına dönmek için sağa kaydır.",
             modifier = Modifier.padding(top = 6.dp, bottom = 18.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        OutlinedTextField(
-            value = friendOlimoraId,
-            onValueChange = { friendOlimoraId = it.lowercase().take(21) },
-            label = { Text("Arkadaşının Olimora ID'si") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = {
-                if (friendOlimoraId.isBlank()) return@Button
-                actionLoading = true
-                error = null
-                coroutineScope.launch {
-                    try {
-                        sendFriendRequest(token, friendOlimoraId)
-                        friendOlimoraId = ""
-                        refreshKey += 1
-                    } catch (exception: Exception) {
-                        error = exception.message ?: "İstek gönderilemedi."
-                    } finally {
-                        actionLoading = false
-                    }
-                }
-            },
-            enabled = !actionLoading && friendOlimoraId.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(48.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
-        ) {
-            Text(if (actionLoading) "Gönderiliyor…" else "Arkadaşlık isteği gönder")
-        }
 
         error?.let { message ->
             StatusNotice(
@@ -2315,7 +2369,13 @@ private fun SocialScreen(token: String) {
             )
         }
         friends.forEach { friend ->
-            FriendRow(friend = friend, onClick = { selectedFriend = friend })
+            FriendRow(
+                friend = friend,
+                onClick = {
+                    selectedFriend = friend
+                    onConversationChanged(true)
+                },
+            )
         }
 
         overview?.outgoing?.takeIf { it.isNotEmpty() }?.let { requests ->
@@ -2352,8 +2412,53 @@ private fun SocialScreen(token: String) {
             Spacer(Modifier.height(28.dp))
         }
     }
+
+    if (showAddFriend) {
+        AlertDialog(
+            onDismissRequest = { if (!actionLoading) showAddFriend = false },
+            title = { Text("Arkadaş ekle") },
+            text = {
+                OutlinedTextField(
+                    value = friendOlimoraId,
+                    onValueChange = { friendOlimoraId = it.lowercase().take(21) },
+                    label = { Text("Arkadaşının Olimora ID'si") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !actionLoading && friendOlimoraId.isNotBlank(),
+                    onClick = {
+                        actionLoading = true
+                        error = null
+                        coroutineScope.launch {
+                            try {
+                                sendFriendRequest(token, friendOlimoraId)
+                                friendOlimoraId = ""
+                                showAddFriend = false
+                                refreshKey += 1
+                            } catch (exception: Exception) {
+                                error = exception.message ?: "İstek gönderilemedi."
+                            } finally {
+                                actionLoading = false
+                            }
+                        }
+                    },
+                ) { Text(if (actionLoading) "Gönderiliyor…" else "İstek gönder") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !actionLoading,
+                    onClick = { showAddFriend = false },
+                ) { Text("Vazgeç") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationScreen(
     token: String,
@@ -2456,37 +2561,38 @@ private fun ConversationScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                TextButton(onClick = { refreshKey += 1 }) {
-                    Text("↻", color = PrimaryPurple, fontSize = 23.sp)
-                }
             }
         }
-        LazyColumn(
-            state = messageListState,
+        PullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { refreshKey += 1 },
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.Bottom,
         ) {
-            item { CompatibilityPreviewCard(friendName = liveFriend.displayName) }
-            if (loading && messages.isEmpty()) {
-                item {
-                    Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyColumn(
+                state = messageListState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Bottom,
+            ) {
+                item { CompatibilityPreviewCard(friendName = liveFriend.displayName) }
+                if (loading && messages.isEmpty()) {
+                    item {
+                        Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-            }
-            items(messages.size, key = { messages[it].id }) { index ->
-                MessageBubble(messages[index])
-            }
-            error?.let { message ->
-                item {
-                    StatusNotice(
-                        message = message,
-                        isError = true,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        actionLabel = "Yenile",
-                        onAction = { refreshKey += 1 },
-                    )
+                items(messages.size, key = { messages[it].id }) { index ->
+                    MessageBubble(messages[index])
                 }
+                error?.let { message ->
+                    item {
+                        StatusNotice(
+                            message = message,
+                            isError = true,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(8.dp)) }
             }
-            item { Spacer(Modifier.height(8.dp)) }
         }
         Card(
             modifier = Modifier
@@ -2984,7 +3090,10 @@ private fun toApiLocalDateTime(date: String, time: String): String? {
     return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).format(parsed)
 }
 
-private fun formatDateInput(value: String): String {
+private fun formatDateInput(previous: String = "", value: String): String {
+    if (value.length < previous.length && previous.endsWith('.') && value == previous.dropLast(1)) {
+        return formatDateInput(value = value.dropLast(1))
+    }
     val digits = value.filter(Char::isDigit).take(8)
     return buildString {
         digits.forEachIndexed { index, char ->
@@ -2994,7 +3103,10 @@ private fun formatDateInput(value: String): String {
     }
 }
 
-private fun formatTimeInput(value: String): String {
+private fun formatTimeInput(previous: String = "", value: String): String {
+    if (value.length < previous.length && previous.endsWith(':') && value == previous.dropLast(1)) {
+        return formatTimeInput(value = value.dropLast(1))
+    }
     val digits = value.filter(Char::isDigit).take(4)
     return buildString {
         digits.forEachIndexed { index, char ->

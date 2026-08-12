@@ -52,6 +52,14 @@ class SocialOverviewResponse(BaseModel):
 class MessageCreate(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
 
+    @field_validator("body")
+    @classmethod
+    def clean_body(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("mesaj boş olamaz")
+        return cleaned
+
 
 class MessageResponse(BaseModel):
     id: uuid.UUID

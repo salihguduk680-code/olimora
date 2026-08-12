@@ -18,6 +18,7 @@ from app.api.v1.schemas.social import (
     SocialUserResponse,
     StatusUpdate,
 )
+from app.core.config import get_settings
 from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
@@ -100,6 +101,17 @@ async def send_friend_request(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> FriendRequestResponse:
+    recent_requests = await session.scalar(
+        select(func.count(FriendshipModel.id)).where(
+            FriendshipModel.requested_by_id == user.id,
+            FriendshipModel.created_at >= datetime.now(UTC) - timedelta(hours=1),
+        )
+    ) or 0
+    if recent_requests >= get_settings().friend_requests_per_hour:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla arkadaşlık isteği gönderdin. Bir süre sonra tekrar dene.",
+        )
     olimora_id = request.olimora_id.strip().lower()
     target = (
         await session.execute(select(UserModel).where(UserModel.olimora_id == olimora_id))
@@ -225,8 +237,19 @@ async def send_message(
 ) -> MessageResponse:
     await _touch_presence(session, user, commit=False)
     friendship = await _accepted_friendship(session, user.id, friend_user_id)
+    recent_messages = await session.scalar(
+        select(func.count(DirectMessageModel.id)).where(
+            DirectMessageModel.sender_id == user.id,
+            DirectMessageModel.created_at >= datetime.now(UTC) - timedelta(minutes=1),
+        )
+    ) or 0
+    if recent_messages >= get_settings().messages_per_minute:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok hızlı mesaj gönderiyorsun. Biraz bekleyip tekrar dene.",
+        )
     message = DirectMessageModel(
-        friendship_id=friendship.id, sender_id=user.id, body=request.body.strip()
+        friendship_id=friendship.id, sender_id=user.id, body=request.body
     )
     session.add(message)
     await session.commit()

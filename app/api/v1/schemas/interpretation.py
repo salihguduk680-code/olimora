@@ -13,3 +13,4 @@ class AthenaInterpretationResponse(BaseModel):
     interpretation: str
     source: Literal["openai", "fallback"]
     model: str | None = None
+    cached: bool = False

@@ -51,6 +51,7 @@ private const val ATHENA_URL =
     "https://olimora-production.up.railway.app/api/v1/athena/natal-chart/interpret"
 
 suspend fun generateAthenaInterpretation(
+    token: String,
     name: String,
     localDateTime: String,
     timezone: String,
@@ -65,7 +66,7 @@ suspend fun generateAthenaInterpretation(
         longitude = longitude,
         placeName = placeName,
     ).put("name", name.ifBlank { "Gökyüzü Yolcusu" })
-    val response = postJson(ATHENA_URL, request, readTimeout = 30_000)
+    val response = postJson(ATHENA_URL, request, token = token, readTimeout = 30_000)
     AthenaResult(
         interpretation = response.getString("interpretation"),
         source = response.getString("source"),
@@ -73,6 +74,7 @@ suspend fun generateAthenaInterpretation(
 }
 
 suspend fun calculateBigThree(
+    token: String,
     localDateTime: String,
     timezone: String,
     latitude: Double,
@@ -80,7 +82,7 @@ suspend fun calculateBigThree(
     placeName: String,
 ): BigThreeResult = withContext(Dispatchers.IO) {
     val request = chartRequest(localDateTime, timezone, latitude, longitude, placeName)
-    val response = postJson(NATAL_CHART_URL, request)
+    val response = postJson(NATAL_CHART_URL, request, token = token)
     val sun = response.getJSONObject("sun")
     val moon = response.getJSONObject("moon")
     val ascendant = response.getJSONObject("ascendant")
@@ -139,7 +141,12 @@ private fun chartRequest(
     .put("place_name", placeName)
     .put("house_system", "P")
 
-private fun postJson(url: String, request: JSONObject, readTimeout: Int = 20_000): JSONObject {
+private fun postJson(
+    url: String,
+    request: JSONObject,
+    token: String,
+    readTimeout: Int = 20_000,
+): JSONObject {
     val connection = (URL(url).openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         connectTimeout = 10_000
@@ -147,6 +154,7 @@ private fun postJson(url: String, request: JSONObject, readTimeout: Int = 20_000
         doOutput = true
         setRequestProperty("Content-Type", "application/json; charset=utf-8")
         setRequestProperty("Accept", "application/json")
+        setRequestProperty("Authorization", "Bearer $token")
     }
 
     return try {

@@ -1,12 +1,20 @@
 package com.olimora.app.data
 
 import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 private const val API_BASE = "https://olimora-production.up.railway.app/api/v1"
 
@@ -61,12 +69,74 @@ data class DirectMessage(val id: String, val body: String, val isMine: Boolean, 
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("olimora_session", Context.MODE_PRIVATE)
-    fun token(): String? = preferences.getString("token", null)
+    private val tokenCipher = SessionTokenCipher()
+
+    fun token(): String? {
+        preferences.getString("token_encrypted", null)?.let { encrypted ->
+            return runCatching { tokenCipher.decrypt(encrypted) }
+                .onFailure { clear() }
+                .getOrNull()
+        }
+        val legacyToken = preferences.getString("token", null) ?: return null
+        return runCatching {
+            preferences.edit()
+                .putString("token_encrypted", tokenCipher.encrypt(legacyToken))
+                .remove("token")
+                .apply()
+            legacyToken
+        }.onFailure { clear() }.getOrNull()
+    }
     fun email(): String? = preferences.getString("email", null)
     fun save(session: AccountSession) {
-        preferences.edit().putString("token", session.token).putString("email", session.email).apply()
+        val encryptedToken = tokenCipher.encrypt(session.token)
+        preferences.edit()
+            .putString("token_encrypted", encryptedToken)
+            .putString("email", session.email)
+            .remove("token")
+            .apply()
     }
     fun clear() = preferences.edit().clear().apply()
+}
+
+private class SessionTokenCipher {
+    private val keyAlias = "olimora_session_token_v1"
+    private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+    private fun secretKey(): SecretKey {
+        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
+            init(
+                KeyGenParameterSpec.Builder(
+                    keyAlias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .build()
+            )
+            generateKey()
+        }
+    }
+
+    fun encrypt(value: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val combined = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(combined, Base64.NO_WRAP)
+    }
+
+    fun decrypt(value: String): String {
+        val combined = Base64.decode(value, Base64.NO_WRAP)
+        require(combined.size > 12) { "Encrypted session is invalid" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            secretKey(),
+            GCMParameterSpec(128, combined.copyOfRange(0, 12)),
+        )
+        return cipher.doFinal(combined.copyOfRange(12, combined.size)).toString(Charsets.UTF_8)
+    }
 }
 
 suspend fun authenticate(email: String, password: String, register: Boolean): AccountSession =

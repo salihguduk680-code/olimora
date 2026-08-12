@@ -177,6 +177,26 @@ class DailySignReadingModel(Base):
     )
 
 
+class NatalInterpretationModel(Base):
+    __tablename__ = "natal_interpretations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "input_hash", name="uq_natal_interpretation_user_input"),
+        Index("ix_natal_interpretations_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    interpretation: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class FriendshipModel(Base):
     __tablename__ = "friendships"
     __table_args__ = (

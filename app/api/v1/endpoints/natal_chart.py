@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.auth_dependencies import get_current_user
 from app.api.dependencies import get_ephemeris_calculator
 from app.api.v1.schemas.natal_chart import (
     AspectResponse,
@@ -20,6 +21,7 @@ from app.modules.astrology.domain.exceptions import (
     NonExistentTimeError,
 )
 from app.modules.astrology.domain.ports import EphemerisCalculator
+from app.modules.astrology.infrastructure.models import UserModel
 
 router = APIRouter()
 
@@ -45,6 +47,7 @@ def _point_response(point: object) -> ChartPointResponse:
 @router.post("/natal-chart/preview", response_model=NatalChartPreviewResponse)
 async def preview_natal_chart(
     request: NatalChartPreviewRequest,
+    _user: Annotated[UserModel, Depends(get_current_user)],
     ephemeris: Annotated[EphemerisCalculator, Depends(get_ephemeris_calculator)],
 ) -> NatalChartPreviewResponse:
     try:

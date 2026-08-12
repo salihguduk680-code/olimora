@@ -10,5 +10,9 @@ __pycache__/
 *.keystore
 *.apk
 *.aab
+olimora-*-preview.png
+olimora-premium-*.png
+olimora-professional-*.png
+olimora-profile-*.png
 android/.idea/
 android/.kotlin/

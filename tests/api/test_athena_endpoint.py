@@ -1,6 +1,11 @@
+import uuid
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
+from app.api.auth_dependencies import get_current_user
 from app.api.dependencies import get_athena_interpretation_service
+from app.core.database import get_database_session
 from app.main import app
 from app.modules.interpretation.service import InterpretationResult
 
@@ -18,8 +23,26 @@ class FakeAthenaService:
         )
 
 
+class FakeScalarResult:
+    def scalar_one_or_none(self):
+        return None
+
+
+class FakeSession:
+    async def execute(self, *_: object, **__: object) -> FakeScalarResult:
+        return FakeScalarResult()
+
+    def add(self, _: object) -> None:
+        pass
+
+    async def commit(self) -> None:
+        pass
+
+
 def test_athena_interpretation_endpoint() -> None:
     app.dependency_overrides[get_athena_interpretation_service] = lambda: FakeAthenaService()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid.uuid4())
+    app.dependency_overrides[get_database_session] = lambda: FakeSession()
     try:
         response = client.post(
             "/api/v1/athena/natal-chart/interpret",
@@ -42,4 +65,5 @@ def test_athena_interpretation_endpoint() -> None:
         ),
         "source": "openai",
         "model": "test-model",
+        "cached": False,
     }

@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 20.0
     athena_max_output_tokens: int = 500
     athena_requests_per_minute: int = 5
+    messages_per_minute: int = 30
+    friend_requests_per_hour: int = 20
+    max_push_installations_per_user: int = 10
     auth_secret: str = "olimora-local-development-secret-change-me"
     auth_token_days: int = 30
     firebase_project_id: str | None = None
@@ -33,8 +36,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_private_auth_secret_in_production(self) -> "Settings":
-        if self.app_env == "production" and "local-development" in self.auth_secret:
-            raise ValueError("AUTH_SECRET must be configured in production")
+        if self.app_env.lower() == "production" and (
+            "local-development" in self.auth_secret
+            or len(self.auth_secret.encode("utf-8")) < 32
+        ):
+            raise ValueError(
+                "AUTH_SECRET must be a private value of at least 32 bytes in production"
+            )
         return self
 
 

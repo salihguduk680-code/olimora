@@ -1,12 +1,23 @@
+import uuid
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.auth_dependencies import get_current_user
 from app.main import app
 
 client = TestClient(app)
 
 
-def test_public_chicago_landmark_preview() -> None:
+@pytest.fixture(autouse=True)
+def authenticated_user():
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid.uuid4())
+    yield
+    app.dependency_overrides.clear()
+
+
+def test_authenticated_chicago_landmark_preview() -> None:
     response = client.post(
         "/api/v1/astrology/natal-chart/preview",
         json={
@@ -59,3 +70,18 @@ def test_invalid_coordinates_are_rejected() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_preview_requires_authentication(authenticated_user) -> None:
+    app.dependency_overrides.pop(get_current_user, None)
+    response = client.post(
+        "/api/v1/astrology/natal-chart/preview",
+        json={
+            "local_datetime": "1990-07-15T14:30:00",
+            "timezone_name": "America/Chicago",
+            "latitude": 41.8796,
+            "longitude": -87.6237,
+            "place_name": "Art Institute of Chicago",
+        },
+    )
+    assert response.status_code == 401

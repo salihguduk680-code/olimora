@@ -1,3 +1,5 @@
+import hashlib
+import json
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime
@@ -5,7 +7,7 @@ from datetime import time as datetime_time
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +32,7 @@ from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
     DailyReadingModel,
     DailySignReadingModel,
+    NatalInterpretationModel,
     UserModel,
 )
 from app.modules.interpretation.service import (
@@ -284,11 +287,12 @@ def _daily_fallback(sun_sign: str, transit_moon_sign: str) -> dict[str, str | No
 @router.post("/natal-chart/interpret", response_model=AthenaInterpretationResponse)
 async def interpret_natal_chart(
     request: AthenaInterpretationRequest,
-    http_request: Request,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
     ephemeris: Annotated[EphemerisCalculator, Depends(get_ephemeris_calculator)],
     athena: Annotated[AthenaInterpretationService, Depends(get_athena_interpretation_service)],
 ) -> AthenaInterpretationResponse:
-    _enforce_rate_limit(http_request.client.host if http_request.client else "unknown")
+    _enforce_rate_limit(str(user.id))
     try:
         resolved = resolve_local_datetime(
             local_datetime=request.local_datetime,
@@ -313,6 +317,33 @@ async def interpret_natal_chart(
             detail={"code": "INVALID_CHART_INPUT", "message": str(error)},
         ) from error
 
+    input_hash = hashlib.sha256(
+        json.dumps(
+            request.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": f"natal-interpretation:{user.id}:{input_hash}"},
+    )
+    cached = (
+        await session.execute(
+            select(NatalInterpretationModel).where(
+                NatalInterpretationModel.user_id == user.id,
+                NatalInterpretationModel.input_hash == input_hash,
+            )
+        )
+    ).scalar_one_or_none()
+    if cached is not None:
+        return AthenaInterpretationResponse(
+            interpretation=cached.interpretation,
+            source=cached.source,  # type: ignore[arg-type]
+            model=cached.model,
+            cached=True,
+        )
+
     try:
         result = await athena.interpret(
             name=request.name,
@@ -328,6 +359,15 @@ async def interpret_natal_chart(
             ),
             source="fallback",
         )
+    interpretation = NatalInterpretationModel(
+        user_id=user.id,
+        input_hash=input_hash,
+        interpretation=result.text,
+        source="openai",
+        model=result.model,
+    )
+    session.add(interpretation)
+    await session.commit()
     return AthenaInterpretationResponse(
         interpretation=result.text,
         source="openai",

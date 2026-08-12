@@ -46,6 +46,9 @@ def create_access_token(user_id: uuid.UUID) -> str:
 def decode_access_token(token: str) -> uuid.UUID | None:
     try:
         header, payload, signature = token.split(".")
+        header_data = json.loads(_decode(header))
+        if header_data != {"alg": "HS256", "typ": "JWT"}:
+            return None
         signed = f"{header}.{payload}"
         expected = _sign(signed, get_settings().auth_secret)
         if not hmac.compare_digest(signature, expected):
@@ -54,7 +57,7 @@ def decode_access_token(token: str) -> uuid.UUID | None:
         if int(data["exp"]) <= int(datetime.now(UTC).timestamp()):
             return None
         return uuid.UUID(data["sub"])
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
         return None
 
 

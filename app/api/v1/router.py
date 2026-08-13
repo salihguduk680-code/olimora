@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.birth_profiles import router as birth_profiles_router
 from app.api.v1.endpoints.birth_time import router as birth_time_router
+from app.api.v1.endpoints.groups import router as groups_router
 from app.api.v1.endpoints.interpretation import router as interpretation_router
 from app.api.v1.endpoints.natal_chart import router as natal_chart_router
 from app.api.v1.endpoints.notifications import router as notifications_router
@@ -19,4 +20,5 @@ router.include_router(birth_time_router, prefix="/astrology", tags=["astrology"]
 router.include_router(natal_chart_router, prefix="/astrology", tags=["astrology"])
 router.include_router(interpretation_router, prefix="/athena", tags=["athena"])
 router.include_router(social_router, tags=["social"])
+router.include_router(groups_router, tags=["groups"])
 router.include_router(notifications_router, tags=["notifications"])

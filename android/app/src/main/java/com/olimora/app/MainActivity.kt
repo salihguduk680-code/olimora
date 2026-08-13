@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,7 +19,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +36,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -71,6 +76,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -103,6 +114,8 @@ import com.olimora.app.data.DistrictLocation
 import com.olimora.app.data.DailySignReading
 import com.olimora.app.data.DailyReading
 import com.olimora.app.data.DirectMessage
+import com.olimora.app.data.GroupMessage
+import com.olimora.app.data.SocialGroup
 import com.olimora.app.data.SocialOverview
 import com.olimora.app.data.SocialUser
 import com.olimora.app.data.ProvinceLocation
@@ -114,6 +127,11 @@ import com.olimora.app.data.acceptFriendRequest
 import com.olimora.app.data.declineFriendRequest
 import com.olimora.app.data.deleteAccount
 import com.olimora.app.data.fetchMessages
+import com.olimora.app.data.fetchGroups
+import com.olimora.app.data.fetchGroupMessages
+import com.olimora.app.data.createGroup
+import com.olimora.app.data.sendGroupMessage
+import com.olimora.app.data.leaveGroup
 import com.olimora.app.data.fetchSocialOverview
 import com.olimora.app.data.sendDirectMessage
 import com.olimora.app.data.sendFriendRequest
@@ -123,6 +141,11 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -416,11 +439,14 @@ fun OlimoraApp() {
         }.getOrDefault(false)
         while (true) {
             runCatching { fetchSocialOverview(token) }.getOrNull()?.let { overview ->
-                unreadMessageCount = overview.totalUnread
-                if (!firebasePushReady && overview.totalUnread > lastNotifiedUnreadCount) {
-                    context.showMessageNotification(overview.totalUnread)
+                val groupUnread = runCatching { fetchGroups(token).sumOf { it.unreadCount } }
+                    .getOrDefault(0)
+                val totalUnread = overview.totalUnread + groupUnread
+                unreadMessageCount = totalUnread
+                if (!firebasePushReady && totalUnread > lastNotifiedUnreadCount) {
+                    context.showMessageNotification(totalUnread)
                 }
-                lastNotifiedUnreadCount = overview.totalUnread
+                lastNotifiedUnreadCount = totalUnread
             }
             delay(10_000)
         }
@@ -574,9 +600,9 @@ fun OlimoraApp() {
             )
 
             OlimoraScreen.ChartResult -> {
-                val pagerState = rememberPagerState(pageCount = { 2 })
+                val pagerState = rememberPagerState(pageCount = { 3 })
                 BackHandler(
-                    enabled = !isConversationOpen && pagerState.currentPage == 1,
+                    enabled = !isConversationOpen && pagerState.currentPage != 0,
                 ) {
                     coroutineScope.launch { pagerState.animateScrollToPage(0) }
                 }
@@ -644,6 +670,8 @@ fun OlimoraApp() {
                                 }
                             },
                             )
+                        } else if (page == 1) {
+                            ChartWheelScreen(chartResult ?: return@HorizontalPager)
                         } else {
                             authToken?.let { token ->
                                 SocialScreen(
@@ -1189,9 +1217,12 @@ private fun PickerField(
         onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
-        label = { Text(label) },
-        placeholder = { Text(placeholder) },
+            .heightIn(min = 66.dp),
+        label = { Text(label, maxLines = 1) },
+        placeholder = { Text(placeholder, maxLines = 1) },
+        textStyle = MaterialTheme.typography.bodyMedium.copy(
+            lineHeight = MaterialTheme.typography.bodyMedium.fontSize * 1.25f,
+        ),
         singleLine = true,
         shape = RoundedCornerShape(12.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1957,7 +1988,7 @@ private fun ChartPagerNavigation(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        listOf("Haritam" to 0, "Arkadaşlar" to 1).forEach { (label, page) ->
+        listOf("Athena" to 0, "Harita" to 1, "Arkadaşlar" to 2).forEach { (label, page) ->
             val selected = selectedPage == page
             TextButton(
                 onClick = { onSelectPage(page) },
@@ -1968,7 +1999,7 @@ private fun ChartPagerNavigation(
                 ),
             ) {
                 Text(label, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal)
-                if (page == 1 && unreadCount > 0) {
+                if (page == 2 && unreadCount > 0) {
                     Box(
                         modifier = Modifier.padding(start = 6.dp).size(20.dp)
                             .background(PrimaryPurple, CircleShape),
@@ -2042,8 +2073,26 @@ private fun SettingsScreen(
                     Column(Modifier.padding(start = 13.dp)) {
                         Text(profileName, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                         Text(accountEmail.orEmpty(), color = Color.White.copy(alpha = 0.68f), style = MaterialTheme.typography.bodySmall)
-                        myProfile?.olimoraId?.let {
-                            Text(it, color = Gold, modifier = Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall)
+                        myProfile?.olimoraId?.let { olimoraId ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    olimoraId,
+                                    color = Gold,
+                                    modifier = Modifier.weight(1f, fill = false).padding(top = 2.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                TextButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Olimora arkadaş kodu", olimoraId))
+                                        settingsMessage = "Arkadaş kodun kopyalandı."
+                                        settingsMessageIsError = false
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                ) {
+                                    Text("Kopyala", color = Gold, fontSize = 11.sp)
+                                }
+                            }
                         }
                     }
                 }
@@ -2244,19 +2293,23 @@ private fun SocialScreen(
     token: String,
     onConversationChanged: (Boolean) -> Unit = {},
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var overview by remember { mutableStateOf<SocialOverview?>(null) }
     var selectedFriend by remember { mutableStateOf<SocialUser?>(null) }
+    var groups by remember { mutableStateOf<List<SocialGroup>>(emptyList()) }
+    var selectedGroup by remember { mutableStateOf<SocialGroup?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
 
     fun closeConversation() {
         selectedFriend = null
+        selectedGroup = null
         onConversationChanged(false)
     }
 
-    BackHandler(enabled = selectedFriend != null) {
+    BackHandler(enabled = selectedFriend != null || selectedGroup != null) {
         closeConversation()
     }
 
@@ -2266,6 +2319,7 @@ private fun SocialScreen(
         while (true) {
             try {
                 overview = fetchSocialOverview(token)
+                groups = fetchGroups(token)
                 error = null
             } catch (exception: Exception) {
                 error = exception.message ?: "Arkadaşlar yüklenemedi."
@@ -2285,9 +2339,26 @@ private fun SocialScreen(
         return
     }
 
+    selectedGroup?.let { group ->
+        GroupConversationScreen(
+            token = token,
+            group = group,
+            currentUserId = overview?.me?.id.orEmpty(),
+            onBack = { closeConversation() },
+            onLeft = {
+                closeConversation()
+                refreshKey += 1
+            },
+        )
+        return
+    }
+
     var friendOlimoraId by remember { mutableStateOf("") }
     var actionLoading by remember { mutableStateOf(false) }
     var showAddFriend by remember { mutableStateOf(false) }
+    var showCreateGroup by remember { mutableStateOf(false) }
+    var groupName by remember { mutableStateOf("") }
+    var selectedGroupMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
     PullToRefreshBox(
         isRefreshing = loading,
         onRefresh = { refreshKey += 1 },
@@ -2360,7 +2431,31 @@ private fun SocialScreen(
             }
         }
 
-        SocialSectionTitle("Sohbetler")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Gruplar", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            TextButton(onClick = { showCreateGroup = true }) { Text("＋ Grup kur") }
+        }
+        if (!loading && groups.isEmpty()) {
+            Text(
+                "Henüz grubun yok. Arkadaşlarınla ilk Olimora grubunu kurabilirsin.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        groups.forEach { group ->
+            GroupRow(
+                group = group,
+                onClick = {
+                    selectedGroup = group
+                    onConversationChanged(true)
+                },
+            )
+        }
+
+        SocialSectionTitle("Özel sohbetler")
         val friends = overview?.friends.orEmpty()
         if (!loading && friends.isEmpty()) {
             Text(
@@ -2418,13 +2513,29 @@ private fun SocialScreen(
             onDismissRequest = { if (!actionLoading) showAddFriend = false },
             title = { Text("Arkadaş ekle") },
             text = {
-                OutlinedTextField(
-                    value = friendOlimoraId,
-                    onValueChange = { friendOlimoraId = it.lowercase().take(21) },
-                    label = { Text("Arkadaşının Olimora ID'si") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column {
+                    OutlinedTextField(
+                        value = friendOlimoraId,
+                        onValueChange = { friendOlimoraId = normalizeFriendCode(it) },
+                        label = { Text("Arkadaşının Olimora ID'si") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val pasted = clipboard.primaryClip
+                                ?.getItemAt(0)
+                                ?.coerceToText(context)
+                                ?.toString()
+                                .orEmpty()
+                            friendOlimoraId = normalizeFriendCode(pasted)
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("Panodan yapıştır")
+                    }
+                }
             },
             confirmButton = {
                 Button(
@@ -2452,6 +2563,77 @@ private fun SocialScreen(
                     enabled = !actionLoading,
                     onClick = { showAddFriend = false },
                 ) { Text("Vazgeç") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+
+    if (showCreateGroup) {
+        AlertDialog(
+            onDismissRequest = { if (!actionLoading) showCreateGroup = false },
+            title = { Text("Yeni grup") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { groupName = it.take(60) },
+                        label = { Text("Grup adı") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Davet edilecek arkadaşlar",
+                        modifier = Modifier.padding(top = 16.dp, bottom = 6.dp),
+                        fontWeight = FontWeight.Medium,
+                    )
+                    overview?.friends.orEmpty().forEach { friend ->
+                        val selected = friend.id in selectedGroupMembers
+                        TextButton(
+                            onClick = {
+                                selectedGroupMembers = if (selected) selectedGroupMembers - friend.id
+                                else if (selectedGroupMembers.size < 19) {
+                                    selectedGroupMembers + friend.id
+                                } else {
+                                    selectedGroupMembers
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(if (selected) "✓" else "○", color = PrimaryPurple, fontSize = 18.sp)
+                            Text(friend.displayName, modifier = Modifier.padding(start = 10.dp).weight(1f), textAlign = TextAlign.Start)
+                        }
+                    }
+                    Text(
+                        "${selectedGroupMembers.size}/19 kişi seçildi",
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !actionLoading && groupName.trim().length >= 2,
+                    onClick = {
+                        actionLoading = true
+                        coroutineScope.launch {
+                            try {
+                                createGroup(token, groupName, selectedGroupMembers.toList())
+                                groupName = ""
+                                selectedGroupMembers = emptySet()
+                                showCreateGroup = false
+                                refreshKey += 1
+                            } catch (exception: Exception) {
+                                error = exception.message ?: "Grup oluşturulamadı."
+                            } finally {
+                                actionLoading = false
+                            }
+                        }
+                    },
+                ) { Text(if (actionLoading) "Kuruluyor…" else "Grubu kur") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateGroup = false }) { Text("Vazgeç") }
             },
             shape = RoundedCornerShape(22.dp),
         )
@@ -2507,9 +2689,11 @@ private fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(messages.size, draft) {
+    LaunchedEffect(messages.lastOrNull()?.id, sending) {
         if (messages.isNotEmpty()) {
-            messageListState.scrollToItem(messages.lastIndex)
+            delay(60)
+            val lastItem = messageListState.layoutInfo.totalItemsCount - 1
+            if (lastItem >= 0) messageListState.animateScrollToItem(lastItem)
         }
     }
 
@@ -2605,7 +2789,7 @@ private fun ConversationScreen(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(8.dp),
-                verticalAlignment = Alignment.Bottom,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
                     value = draft,
@@ -2613,11 +2797,6 @@ private fun ConversationScreen(
                     placeholder = { Text("Mesaj yaz…") },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
-                    supportingText = {
-                        if (draft.length >= 1800) {
-                            Text("${draft.length}/2000", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-                        }
-                    },
                     shape = RoundedCornerShape(18.dp),
                 )
                 Spacer(Modifier.width(7.dp))
@@ -2629,7 +2808,8 @@ private fun ConversationScreen(
                         draft = ""
                         coroutineScope.launch {
                             try {
-                                sendDirectMessage(token, friend.id, body)
+                                val sentMessage = sendDirectMessage(token, friend.id, body)
+                                messages = messages + sentMessage
                                 refreshKey += 1
                             } catch (exception: Exception) {
                                 draft = body
@@ -2655,6 +2835,197 @@ private fun ConversationScreen(
                         Text("➤", fontSize = 19.sp)
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GroupConversationScreen(
+    token: String,
+    group: SocialGroup,
+    currentUserId: String,
+    onBack: () -> Unit,
+    onLeft: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var messages by remember(group.id) { mutableStateOf<List<GroupMessage>>(emptyList()) }
+    var draft by remember(group.id) { mutableStateOf("") }
+    var loading by remember(group.id) { mutableStateOf(true) }
+    var sending by remember(group.id) { mutableStateOf(false) }
+    var error by remember(group.id) { mutableStateOf<String?>(null) }
+    var refreshKey by remember(group.id) { mutableStateOf(0) }
+    var showInfo by remember(group.id) { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(group.id, refreshKey) {
+        while (true) {
+            try {
+                messages = fetchGroupMessages(token, group.id)
+                error = null
+            } catch (exception: Exception) {
+                error = exception.message ?: "Grup mesajları yüklenemedi."
+            } finally {
+                loading = false
+            }
+            delay(4_000)
+        }
+    }
+    LaunchedEffect(messages.size, draft) {
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(
+            Brush.verticalGradient(
+                listOf(PrimaryPurple.copy(alpha = 0.10f), MaterialTheme.colorScheme.background)
+            )
+        ).padding(horizontal = 14.dp),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text("‹", color = PrimaryPurple, fontSize = 30.sp)
+                }
+                Box(
+                    Modifier.size(44.dp).background(PrimaryPurple.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Text("✦", color = Gold, fontSize = 20.sp) }
+                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                    Text(group.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Text("${group.members.size} üye", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = { showInfo = true }) { Text("Üyeler") }
+            }
+        }
+        PullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { refreshKey += 1 },
+            modifier = Modifier.weight(1f),
+        ) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
+                if (loading && messages.isEmpty()) {
+                    item { Text("Grup hazırlanıyor…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                items(messages.size, key = { messages[it].id }) { index ->
+                    GroupMessageBubble(messages[index])
+                }
+                error?.let { message -> item { StatusNotice(message, true, Modifier.padding(vertical = 8.dp)) } }
+                item { Spacer(Modifier.height(8.dp)) }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth().imePadding().padding(vertical = 10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { if (it.length <= 2000) draft = it },
+                    placeholder = { Text("Gruba yaz…") },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 4,
+                    shape = RoundedCornerShape(18.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Button(
+                    onClick = {
+                        val body = draft.trim()
+                        if (body.isEmpty()) return@Button
+                        sending = true
+                        draft = ""
+                        coroutineScope.launch {
+                            try {
+                                sendGroupMessage(token, group.id, body)
+                                refreshKey += 1
+                            } catch (exception: Exception) {
+                                draft = body
+                                error = exception.message
+                            } finally {
+                                sending = false
+                            }
+                        }
+                    },
+                    enabled = draft.isNotBlank() && !sending,
+                    modifier = Modifier.size(50.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape,
+                ) { Text(if (sending) "…" else "➤", fontSize = 19.sp) }
+            }
+        }
+    }
+
+    if (showInfo) {
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text(group.name) },
+            text = {
+                Column {
+                    group.members.forEach { member ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                            Text(member.user.displayName, modifier = Modifier.weight(1f))
+                            if (member.role == "owner") Text("Kurucu", color = Gold, fontSize = 12.sp)
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                runCatching { leaveGroup(token, group.id) }
+                                    .onSuccess { onLeft() }
+                                    .onFailure { error = it.message }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    ) {
+                        Text(
+                            if (group.ownerId == currentUserId) "Grubu sil" else "Gruptan ayrıl",
+                            color = Color(0xFFC44747),
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") } },
+        )
+    }
+}
+
+@Composable
+private fun GroupMessageBubble(message: GroupMessage) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
+    ) {
+        Card(
+            modifier = Modifier.widthIn(max = 286.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (message.isMine) PrimaryPurple else MaterialTheme.colorScheme.surface
+            ),
+            border = if (message.isMine) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                if (!message.isMine) Text(message.sender.displayName, color = PrimaryPurple, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(message.body, color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface)
+                Text(
+                    formatMessageTime(message.createdAt),
+                    modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
+                    color = if (message.isMine) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                )
             }
         }
     }
@@ -2719,13 +3090,28 @@ private fun MessageBubble(message: DirectMessage) {
                     message.body,
                     color = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    formatMessageTime(message.createdAt),
+                Row(
                     modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
-                    color = if (message.isMine) Color.White.copy(alpha = 0.72f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        formatMessageTime(message.createdAt),
+                        color = if (message.isMine) Color.White.copy(alpha = 0.72f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                    )
+                    if (message.isMine) {
+                        Text(
+                            text = "✦",
+                            modifier = Modifier.padding(start = 5.dp),
+                            color = if (message.readAt != null) Gold
+                            else Color.White.copy(alpha = 0.42f),
+                            fontSize = 12.sp,
+                            fontWeight = if (message.readAt != null) FontWeight.Bold
+                            else FontWeight.Normal,
+                        )
+                    }
+                }
             }
         }
     }
@@ -2750,6 +3136,14 @@ private fun formatMessageTime(value: String): String {
     } ?: return Regex("T(\\d{2}:\\d{2})").find(value)?.groupValues?.get(1) ?: ""
     return SimpleDateFormat("HH:mm", Locale.getDefault()).format(parsed)
 }
+
+private fun normalizeFriendCode(value: String): String = value
+    .trim()
+    .substringAfterLast('/')
+    .removePrefix("@")
+    .lowercase()
+    .filter { it.isLetterOrDigit() || it == '_' }
+    .take(21)
 
 private fun formatPresence(friend: SocialUser): String {
     if (friend.isOnline) return "● Çevrimiçi · Olimora'da"
@@ -2784,6 +3178,36 @@ private fun SocialSectionTitle(text: String) {
         fontWeight = FontWeight.Medium,
         fontSize = 18.sp,
     )
+}
+
+@Composable
+private fun GroupRow(group: SocialGroup, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(14.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).background(PrimaryPurple.copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text("✦", color = Gold, fontSize = 20.sp) }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(group.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                "${group.members.size} üye · Grup sohbeti",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (group.unreadCount > 0) {
+            Box(Modifier.size(24.dp).background(PrimaryPurple, CircleShape), contentAlignment = Alignment.Center) {
+                Text(group.unreadCount.coerceAtMost(99).toString(), color = Color.White, fontSize = 11.sp)
+            }
+        } else {
+            Text("›", color = PrimaryPurple, fontSize = 22.sp)
+        }
+    }
 }
 
 @Composable
@@ -2955,6 +3379,274 @@ private fun ChartDetailsSection(chart: BigThreeResult) {
             }
         }
     }
+}
+
+@Composable
+private fun ChartWheelScreen(chart: BigThreeResult) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Text(
+            "Gökyüzü haritan",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            "Doğduğun andaki gezegenler, evler ve aralarındaki açılar.",
+            modifier = Modifier.padding(top = 4.dp, bottom = 14.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        NatalChartWheel(chart)
+        Text(
+            "Harita özeti",
+            modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BigThreeCard(signSymbol(chart.sunSign), "Güneş", signName(chart.sunSign), chart.sunDegree, Modifier.weight(1f))
+            BigThreeCard(signSymbol(chart.moonSign), "Ay", signName(chart.moonSign), chart.moonDegree, Modifier.weight(1f))
+            BigThreeCard(signSymbol(chart.ascendantSign), "Yükselen", signName(chart.ascendantSign), chart.ascendantDegree, Modifier.weight(1f))
+        }
+        Text(
+            "Açıların",
+            modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        DetailGroup(title = "Önemli açılar · ${chart.aspects.size}") {
+            if (chart.aspects.isEmpty()) {
+                Text(
+                    "Seçili toleransa giren önemli bir açı bulunmadı.",
+                    modifier = Modifier.padding(14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                chart.aspects.take(8).forEachIndexed { index, aspect ->
+                    AspectDetailRow(aspect)
+                    if (index != minOf(7, chart.aspects.lastIndex)) DetailSeparator()
+                }
+                if (chart.aspects.size > 8) {
+                    Text(
+                        "+ ${chart.aspects.size - 8} açı daha · Tümünü Athena sayfasındaki detaylarda görebilirsin.",
+                        modifier = Modifier.padding(14.dp),
+                        color = PrimaryPurple,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+@Composable
+private fun NatalChartWheel(chart: BigThreeResult) {
+    var selectedPoint by remember { mutableStateOf<ChartPointResult?>(null) }
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val outlineColor = MaterialTheme.colorScheme.outline
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val subtleTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val ascendantLongitude = chart.houses.firstOrNull { it.number == 1 }
+        ?.let { zodiacLongitude(it.sign, it.degreeInSign) }
+        ?: chart.positions.firstOrNull { it.name == "ascendant" }?.longitude
+        ?: 0.0
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+        border = BorderStroke(1.dp, outlineColor),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Doğum haritası çarkı", color = PrimaryPurple, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Gezegen sembolüne dokunarak yerleşimini inceleyebilirsin.",
+                modifier = Modifier.padding(top = 3.dp, bottom = 10.dp),
+                color = subtleTextColor,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .pointerInput(chart, ascendantLongitude) {
+                        detectTapGestures { tap ->
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val radius = min(size.width, size.height) * 0.43f
+                            selectedPoint = chart.positions
+                                .map { it to wheelPoint(center, radius * 0.74f, it.longitude, ascendantLongitude) }
+                                .minByOrNull { (_, point) -> distance(tap, point) }
+                                ?.takeIf { (_, point) -> distance(tap, point) <= 32.dp.toPx() }
+                                ?.first
+                        }
+                    },
+            ) {
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val radius = min(size.width, size.height) * 0.46f
+                val zodiacInner = radius * 0.78f
+                val houseInner = radius * 0.55f
+                val aspectRadius = radius * 0.50f
+                val textPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                }
+
+                drawCircle(Gold.copy(alpha = 0.10f), radius, center)
+                drawCircle(outlineColor.copy(alpha = 0.65f), radius, center, style = Stroke(1.5.dp.toPx()))
+                drawCircle(outlineColor.copy(alpha = 0.45f), zodiacInner, center, style = Stroke(1.dp.toPx()))
+                drawCircle(outlineColor.copy(alpha = 0.35f), houseInner, center, style = Stroke(1.dp.toPx()))
+
+                repeat(12) { index ->
+                    val longitude = index * 30.0
+                    val outer = wheelPoint(center, radius, longitude, ascendantLongitude)
+                    val inner = wheelPoint(center, zodiacInner, longitude, ascendantLongitude)
+                    drawLine(outlineColor.copy(alpha = 0.50f), inner, outer, 1.dp.toPx())
+                    val labelPoint = wheelPoint(center, radius * 0.885f, longitude + 15.0, ascendantLongitude)
+                    textPaint.color = zodiacColor(index).toArgb()
+                    textPaint.textSize = 17.sp.toPx()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        zodiacSymbols[index], labelPoint.x, labelPoint.y + textPaint.textSize * 0.34f, textPaint,
+                    )
+                }
+
+                chart.houses.forEach { house ->
+                    val longitude = zodiacLongitude(house.sign, house.degreeInSign)
+                    val edge = wheelPoint(center, zodiacInner, longitude, ascendantLongitude)
+                    val inner = wheelPoint(center, houseInner, longitude, ascendantLongitude)
+                    drawLine(
+                        if (house.number == 1 || house.number == 10) Gold else outlineColor,
+                        inner,
+                        edge,
+                        if (house.number == 1 || house.number == 10) 2.dp.toPx() else 1.dp.toPx(),
+                    )
+                    val next = chart.houses.firstOrNull { it.number == house.number % 12 + 1 }
+                    val nextLongitude = next?.let { zodiacLongitude(it.sign, it.degreeInSign) } ?: longitude + 30.0
+                    val midpoint = circularMidpoint(longitude, nextLongitude)
+                    val numberPoint = wheelPoint(center, radius * 0.655f, midpoint, ascendantLongitude)
+                    textPaint.color = subtleTextColor.toArgb()
+                    textPaint.textSize = 10.sp.toPx()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        house.number.toString(), numberPoint.x, numberPoint.y + textPaint.textSize * 0.34f, textPaint,
+                    )
+                }
+
+                val positionsByName = chart.positions.associateBy { it.name }
+                chart.aspects.forEach { aspect ->
+                    val first = positionsByName[aspect.bodyA] ?: return@forEach
+                    val second = positionsByName[aspect.bodyB] ?: return@forEach
+                    drawLine(
+                        color = aspectLineColor(aspect.type).copy(alpha = 0.72f),
+                        start = wheelPoint(center, aspectRadius, first.longitude, ascendantLongitude),
+                        end = wheelPoint(center, aspectRadius, second.longitude, ascendantLongitude),
+                        strokeWidth = if (aspect.orb <= 1.0) 1.8.dp.toPx() else 1.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+
+                chart.positions.forEach { point ->
+                    val marker = wheelPoint(center, radius * 0.74f, point.longitude, ascendantLongitude)
+                    val selected = selectedPoint?.name == point.name
+                    drawCircle(
+                        color = if (selected) Gold.copy(alpha = 0.28f) else surfaceColor,
+                        radius = if (selected) 14.dp.toPx() else 11.dp.toPx(),
+                        center = marker,
+                    )
+                    if (selected) drawCircle(Gold, 14.dp.toPx(), marker, style = Stroke(1.5.dp.toPx()))
+                    textPaint.color = if (selected) Gold.toArgb() else textColor.toArgb()
+                    textPaint.textSize = 18.sp.toPx()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        planetSymbol(point.name), marker.x, marker.y + textPaint.textSize * 0.34f, textPaint,
+                    )
+                }
+
+                drawLine(Gold, Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), 1.dp.toPx())
+                textPaint.color = Gold.toArgb()
+                textPaint.textSize = 10.sp.toPx()
+                textPaint.textAlign = android.graphics.Paint.Align.LEFT
+                drawContext.canvas.nativeCanvas.drawText("ASC", center.x - radius + 5.dp.toPx(), center.y - 5.dp.toPx(), textPaint)
+                textPaint.textAlign = android.graphics.Paint.Align.CENTER
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                AspectLegend("Uyumlu", Color(0xFF4F9D78))
+                AspectLegend("Zorlayıcı", Color(0xFFD35D6E))
+                AspectLegend("Kavuşum", Gold)
+            }
+
+            selectedPoint?.let { point ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.08f)),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(planetSymbol(point.name), color = Gold, fontSize = 28.sp)
+                        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                            Text(planetName(point.name), fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${signName(point.sign)} ${formatDegree(point.degreeInSign)} · ${point.house?.let { "$it. ev" } ?: "Ev yok"}",
+                                color = subtleTextColor,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (point.isRetrograde) Text("R", color = PrimaryPurple, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AspectLegend(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+        Text(label, modifier = Modifier.padding(start = 5.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private val zodiacSymbols = listOf("♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓")
+private val zodiacKeys = listOf("aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra", "scorpio", "sagittarius", "capricorn", "aquarius", "pisces")
+
+private fun zodiacLongitude(sign: String, degree: Double): Double =
+    ((zodiacKeys.indexOf(sign.lowercase(Locale.ROOT)).coerceAtLeast(0) * 30.0 + degree) % 360.0 + 360.0) % 360.0
+
+private fun wheelPoint(center: Offset, radius: Float, longitude: Double, ascendant: Double): Offset {
+    val angle = (180.0 - (longitude - ascendant)) * PI / 180.0
+    return Offset(center.x + cos(angle).toFloat() * radius, center.y + sin(angle).toFloat() * radius)
+}
+
+private fun distance(first: Offset, second: Offset): Float =
+    sqrt((first.x - second.x) * (first.x - second.x) + (first.y - second.y) * (first.y - second.y))
+
+private fun circularMidpoint(first: Double, second: Double): Double {
+    var span = (second - first + 360.0) % 360.0
+    if (span == 0.0) span = 30.0
+    return (first + span / 2.0) % 360.0
+}
+
+private fun zodiacColor(index: Int): Color = when (index % 4) {
+    0 -> Color(0xFFE86A52)
+    1 -> Color(0xFF4F9D78)
+    2 -> Color(0xFFE0A72E)
+    else -> Color(0xFF4F82C0)
+}
+
+private fun aspectLineColor(type: String): Color = when (type.lowercase(Locale.ROOT)) {
+    "trine", "sextile" -> Color(0xFF4F9D78)
+    "square", "opposition" -> Color(0xFFD35D6E)
+    "conjunction" -> Gold
+    else -> Color(0xFF8C72B8)
 }
 
 @Composable

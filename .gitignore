@@ -10,6 +10,7 @@ __pycache__/
 *.keystore
 *.apk
 *.aab
+artifacts/
 olimora-*-preview.png
 olimora-premium-*.png
 olimora-professional-*.png

@@ -80,6 +80,12 @@ async def test_friend_request_message_and_read_flow() -> None:
             assert messages.json()[0]["body"] == "Olimora sosyal akış testi"
             assert messages.json()[0]["is_mine"] is False
 
+            sender_view = await client.get(
+                f"/api/v1/social/messages/{user_ids[1]}", headers=headers[0]
+            )
+            assert sender_view.status_code == 200
+            assert sender_view.json()[0]["read_at"] is not None
+
             read = await client.get("/api/v1/social/overview", headers=headers[1])
             assert read.status_code == 200
             assert read.json()["total_unread"] == 0

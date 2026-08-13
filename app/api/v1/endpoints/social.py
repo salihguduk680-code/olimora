@@ -215,6 +215,7 @@ async def list_messages(
             .limit(100)
         )
     ).scalars().all()
+    read_at = datetime.now(UTC)
     await session.execute(
         update(DirectMessageModel)
         .where(
@@ -222,8 +223,11 @@ async def list_messages(
             DirectMessageModel.sender_id != user.id,
             DirectMessageModel.read_at.is_(None),
         )
-        .values(read_at=datetime.now(UTC))
+        .values(read_at=read_at)
     )
+    for message in messages:
+        if message.sender_id != user.id and message.read_at is None:
+            message.read_at = read_at
     await session.commit()
     return [_message_response(item, current_user_id=user.id) for item in reversed(messages)]
 
@@ -348,5 +352,6 @@ def _message_response(
         sender_id=message.sender_id,
         body=message.body,
         created_at=message.created_at,
+        read_at=message.read_at,
         is_mine=message.sender_id == current_user_id,
     )

@@ -65,7 +65,28 @@ data class SocialOverview(
     val outgoing: List<FriendRequest>,
     val totalUnread: Int,
 )
-data class DirectMessage(val id: String, val body: String, val isMine: Boolean, val createdAt: String)
+data class DirectMessage(
+    val id: String,
+    val body: String,
+    val isMine: Boolean,
+    val createdAt: String,
+    val readAt: String? = null,
+)
+data class SocialGroupMember(val user: SocialUser, val role: String)
+data class SocialGroup(
+    val id: String,
+    val name: String,
+    val ownerId: String,
+    val members: List<SocialGroupMember>,
+    val unreadCount: Int,
+)
+data class GroupMessage(
+    val id: String,
+    val sender: SocialUser,
+    val body: String,
+    val isMine: Boolean,
+    val createdAt: String,
+)
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("olimora_session", Context.MODE_PRIVATE)
@@ -268,20 +289,73 @@ suspend fun fetchMessages(token: String, friendId: String): List<DirectMessage> 
                     body = item.getString("body"),
                     isMine = item.getBoolean("is_mine"),
                     createdAt = item.getString("created_at"),
+                    readAt = item.optString("read_at").takeUnless { it.isBlank() || it == "null" },
                 )
             }
     }
 
-suspend fun sendDirectMessage(token: String, friendId: String, body: String) =
+suspend fun sendDirectMessage(token: String, friendId: String, body: String): DirectMessage =
+    withContext(Dispatchers.IO) {
+        val item = requestJson(
+            "$API_BASE/social/messages/$friendId",
+            "POST",
+            JSONObject().put("body", body.trim()),
+            token,
+        )
+        DirectMessage(
+            id = item.getString("id"),
+            body = item.getString("body"),
+            isMine = item.getBoolean("is_mine"),
+            createdAt = item.getString("created_at"),
+            readAt = item.optString("read_at").takeUnless { it.isBlank() || it == "null" },
+        )
+    }
+
+suspend fun fetchGroups(token: String): List<SocialGroup> = withContext(Dispatchers.IO) {
+    try {
+        requestJsonArray("$API_BASE/social/groups", "GET", token = token)
+            .mapObjects(::parseSocialGroup)
+    } catch (error: ApiException) {
+        // Eski backend sürümü çalışırken arkadaş ekranının tamamını bozma.
+        if (error.statusCode == 404) emptyList() else throw error
+    }
+}
+
+suspend fun createGroup(
+    token: String,
+    name: String,
+    memberIds: List<String>,
+): SocialGroup = withContext(Dispatchers.IO) {
+    parseSocialGroup(
+        requestJson(
+            "$API_BASE/social/groups",
+            "POST",
+            JSONObject().put("name", name.trim()).put("member_ids", JSONArray(memberIds)),
+            token,
+        )
+    )
+}
+
+suspend fun fetchGroupMessages(token: String, groupId: String): List<GroupMessage> =
+    withContext(Dispatchers.IO) {
+        requestJsonArray("$API_BASE/social/groups/$groupId/messages", "GET", token = token)
+            .mapObjects(::parseGroupMessage)
+    }
+
+suspend fun sendGroupMessage(token: String, groupId: String, body: String) =
     withContext(Dispatchers.IO) {
         requestJson(
-            "$API_BASE/social/messages/$friendId",
+            "$API_BASE/social/groups/$groupId/messages",
             "POST",
             JSONObject().put("body", body.trim()),
             token,
         )
         Unit
     }
+
+suspend fun leaveGroup(token: String, groupId: String) = withContext(Dispatchers.IO) {
+    requestNoContent("$API_BASE/social/groups/$groupId/membership", "DELETE", token)
+}
 
 suspend fun registerPushInstallation(token: String, fid: String) = withContext(Dispatchers.IO) {
     requestJson(
@@ -360,6 +434,27 @@ private fun parseSocialUser(item: JSONObject) = SocialUser(
 private fun parseFriendRequest(item: JSONObject) = FriendRequest(
     id = item.getString("id"),
     user = parseSocialUser(item.getJSONObject("user")),
+)
+
+private fun parseSocialGroup(item: JSONObject) = SocialGroup(
+    id = item.getString("id"),
+    name = item.getString("name"),
+    ownerId = item.getString("owner_id"),
+    members = item.getJSONArray("members").mapObjects { member ->
+        SocialGroupMember(
+            user = parseSocialUser(member.getJSONObject("user")),
+            role = member.getString("role"),
+        )
+    },
+    unreadCount = item.optInt("unread_count", 0),
+)
+
+private fun parseGroupMessage(item: JSONObject) = GroupMessage(
+    id = item.getString("id"),
+    sender = parseSocialUser(item.getJSONObject("sender")),
+    body = item.getString("body"),
+    isMine = item.getBoolean("is_mine"),
+    createdAt = item.getString("created_at"),
 )
 
 private inline fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =

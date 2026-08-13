@@ -66,4 +66,5 @@ class MessageResponse(BaseModel):
     sender_id: uuid.UUID
     body: str
     created_at: datetime
+    read_at: datetime | None = None
     is_mine: bool

@@ -29,16 +29,34 @@ class FirebasePushService:
     def enabled(self) -> bool:
         return self._app is not None
 
-    async def send_new_message(self, *, fids: list[str], sender_name: str) -> None:
+    async def send_new_message(
+        self, *, fids: list[str], sender_name: str, message_preview: str
+    ) -> None:
         if self._app is None or not fids:
             return
+        preview = " ".join(message_preview.split()).strip()
+        if len(preview) > 120:
+            preview = f"{preview[:117]}…"
+        if not preview:
+            preview = "Yeni bir mesaj gönderdi."
         messages = [
             messaging.Message(
                 notification=messaging.Notification(
                     title=f"{sender_name} sana yazdı",
-                    body="Olimora'da yeni bir mesajın var.",
+                    body=preview,
                 ),
-                data={"type": "direct_message"},
+                data={
+                    "type": "message",
+                    "sender_name": sender_name,
+                    "message_preview": preview,
+                },
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    notification=messaging.AndroidNotification(
+                        channel_id="olimora_messages",
+                        visibility="private",
+                    ),
+                ),
                 fid=fid,
             )
             for fid in fids

@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Olimora" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Olimora" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#FAF8FD</item>
+        <item name="android:navigationBarColor">#FAF8FD</item>
+        <item name="android:statusBarColor">#FAF8FD</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">#7B46AD</item>
+    </style>
 </resources>

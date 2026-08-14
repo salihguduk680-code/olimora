@@ -36,6 +36,7 @@ data class DailyReading(
     val workMoney: String,
     val caution: String,
     val cached: Boolean,
+    val isFavorite: Boolean = false,
 )
 
 data class DailySignReading(
@@ -86,6 +87,22 @@ data class GroupMessage(
     val body: String,
     val isMine: Boolean,
     val createdAt: String,
+)
+data class CompatibilityAspect(
+    val personABody: String,
+    val personBBody: String,
+    val aspectType: String,
+    val orb: Double,
+    val tone: String,
+)
+data class CompatibilityResult(
+    val friendName: String,
+    val communication: Int,
+    val emotional: Int,
+    val attraction: Int,
+    val stability: Int,
+    val highlights: List<CompatibilityAspect>,
+    val disclaimer: String,
 )
 
 class SessionStore(context: Context) {
@@ -220,8 +237,44 @@ suspend fun requestDailyReading(token: String): DailyReading = withContext(Dispa
         workMoney = response.getString("work_money"),
         caution = response.getString("caution"),
         cached = response.optBoolean("cached", false),
+        isFavorite = response.optBoolean("is_favorite", false),
     )
 }
+
+suspend fun fetchDailyReadingHistory(token: String): List<DailyReading> =
+    withContext(Dispatchers.IO) {
+        requestJsonArray("$API_BASE/athena/daily/history", "GET", token = token)
+            .mapObjects { response ->
+                DailyReading(
+                    date = response.getString("reading_date"),
+                    mainTheme = response.getString("main_theme"),
+                    relationships = response.getString("relationships"),
+                    workMoney = response.getString("work_money"),
+                    caution = response.getString("caution"),
+                    cached = true,
+                    isFavorite = response.optBoolean("is_favorite", false),
+                )
+            }
+    }
+
+suspend fun toggleDailyReadingFavorite(token: String, date: String): DailyReading =
+    withContext(Dispatchers.IO) {
+        val response = requestJson(
+            "$API_BASE/athena/daily/$date/favorite",
+            "PATCH",
+            JSONObject(),
+            token,
+        )
+        DailyReading(
+            date = response.getString("reading_date"),
+            mainTheme = response.getString("main_theme"),
+            relationships = response.getString("relationships"),
+            workMoney = response.getString("work_money"),
+            caution = response.getString("caution"),
+            cached = true,
+            isFavorite = response.optBoolean("is_favorite", false),
+        )
+    }
 
 suspend fun requestDailySignReading(token: String): DailySignReading = withContext(Dispatchers.IO) {
     val response = requestJson("$API_BASE/athena/daily-sign", "POST", JSONObject(), token)
@@ -267,6 +320,18 @@ suspend fun updateSocialStatus(token: String, statusMessage: String?) = withCont
     Unit
 }
 
+suspend fun updateSocialDisplayName(token: String, displayName: String): SocialUser =
+    withContext(Dispatchers.IO) {
+        parseSocialUser(
+            requestJson(
+                "$API_BASE/social/profile",
+                "PATCH",
+                JSONObject().put("display_name", displayName.trim()),
+                token,
+            )
+        )
+    }
+
 suspend fun deleteAccount(token: String) = withContext(Dispatchers.IO) {
     requestNoContent("$API_BASE/auth/me", "DELETE", token)
 }
@@ -308,6 +373,61 @@ suspend fun sendDirectMessage(token: String, friendId: String, body: String): Di
             isMine = item.getBoolean("is_mine"),
             createdAt = item.getString("created_at"),
             readAt = item.optString("read_at").takeUnless { it.isBlank() || it == "null" },
+        )
+    }
+
+suspend fun reportUser(
+    token: String,
+    userId: String,
+    reason: String = "inappropriate",
+    messageId: String? = null,
+) = withContext(Dispatchers.IO) {
+    val body = JSONObject()
+        .put("reported_user_id", userId)
+        .put("reason", reason)
+    if (messageId != null) body.put("message_id", messageId)
+    requestJson("$API_BASE/moderation/reports", "POST", body, token)
+    Unit
+}
+
+suspend fun blockUser(token: String, userId: String) = withContext(Dispatchers.IO) {
+    requestJson("$API_BASE/moderation/blocks/$userId", "POST", JSONObject(), token)
+    Unit
+}
+
+suspend fun submitAthenaFeedback(
+    token: String,
+    contentType: String,
+    reason: String,
+) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/moderation/athena-feedback",
+        "POST",
+        JSONObject().put("content_type", contentType).put("reason", reason),
+        token,
+    )
+    Unit
+}
+
+suspend fun fetchCompatibility(token: String, friendId: String): CompatibilityResult =
+    withContext(Dispatchers.IO) {
+        val response = requestJson("$API_BASE/social/compatibility/$friendId", "GET", token = token)
+        CompatibilityResult(
+            friendName = response.getString("friend_name"),
+            communication = response.getInt("communication"),
+            emotional = response.getInt("emotional"),
+            attraction = response.getInt("attraction"),
+            stability = response.getInt("stability"),
+            highlights = response.getJSONArray("highlights").mapObjects { item ->
+                CompatibilityAspect(
+                    personABody = item.getString("person_a_body"),
+                    personBBody = item.getString("person_b_body"),
+                    aspectType = item.getString("aspect_type"),
+                    orb = item.getDouble("orb"),
+                    tone = item.getString("tone"),
+                )
+            },
+            disclaimer = response.getString("disclaimer"),
         )
     }
 

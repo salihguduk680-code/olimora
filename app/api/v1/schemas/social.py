@@ -35,6 +35,18 @@ class StatusUpdate(BaseModel):
         return cleaned or None
 
 
+class SocialProfileUpdate(BaseModel):
+    display_name: str = Field(min_length=2, max_length=30)
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("rumuz çok kısa")
+        return cleaned
+
+
 class FriendRequestResponse(BaseModel):
     id: uuid.UUID
     user: SocialUserResponse

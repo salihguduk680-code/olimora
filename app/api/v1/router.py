@@ -3,8 +3,10 @@ from fastapi import APIRouter
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.birth_profiles import router as birth_profiles_router
 from app.api.v1.endpoints.birth_time import router as birth_time_router
+from app.api.v1.endpoints.compatibility import router as compatibility_router
 from app.api.v1.endpoints.groups import router as groups_router
 from app.api.v1.endpoints.interpretation import router as interpretation_router
+from app.api.v1.endpoints.moderation import router as moderation_router
 from app.api.v1.endpoints.natal_chart import router as natal_chart_router
 from app.api.v1.endpoints.notifications import router as notifications_router
 from app.api.v1.endpoints.persisted_charts import router as persisted_charts_router
@@ -22,3 +24,5 @@ router.include_router(interpretation_router, prefix="/athena", tags=["athena"])
 router.include_router(social_router, tags=["social"])
 router.include_router(groups_router, tags=["groups"])
 router.include_router(notifications_router, tags=["notifications"])
+router.include_router(moderation_router, tags=["moderation"])
+router.include_router(compatibility_router, tags=["compatibility"])

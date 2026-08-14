@@ -17,8 +17,8 @@ android {
         applicationId = "com.olimora.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 11
-        versionName = "0.10.0-beta.1"
+        versionCode = 12
+        versionName = "0.11.0-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

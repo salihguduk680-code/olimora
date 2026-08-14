@@ -15,6 +15,7 @@ from app.api.v1.schemas.social import (
     MessageCreate,
     MessageResponse,
     SocialOverviewResponse,
+    SocialProfileUpdate,
     SocialUserResponse,
     StatusUpdate,
 )
@@ -25,6 +26,7 @@ from app.modules.astrology.infrastructure.models import (
     DirectMessageModel,
     FirebaseInstallationModel,
     FriendshipModel,
+    UserBlockModel,
     UserModel,
 )
 from app.modules.notifications.service import get_firebase_push_service
@@ -32,6 +34,17 @@ from app.modules.notifications.service import get_firebase_push_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/social")
+
+
+@router.patch("/profile", response_model=SocialUserResponse)
+async def update_social_profile(
+    request: SocialProfileUpdate,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> SocialUserResponse:
+    user.display_name = request.display_name
+    await session.commit()
+    return await _social_user(session, user.id)
 
 
 @router.patch("/status", response_model=SocialUserResponse)
@@ -52,6 +65,7 @@ async def social_overview(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> SocialOverviewResponse:
     await _touch_presence(session, user)
+    blocked_ids = await _blocked_user_ids(session, user.id)
     relationships = (
         await session.execute(
             select(FriendshipModel)
@@ -69,6 +83,8 @@ async def social_overview(
     outgoing: list[FriendRequestResponse] = []
     for friendship in relationships:
         other_id = _other_user_id(friendship, user.id)
+        if other_id in blocked_ids:
+            continue
         unread_count = 0
         if friendship.status == "accepted":
             unread_count = await session.scalar(
@@ -125,6 +141,11 @@ async def send_friend_request(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Kendine arkadaşlık isteği gönderemezsin.",
+        )
+    if await _users_blocked(session, user.id, target.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bu kullanıcıyla bağlantı kuramazsın.",
         )
     low_id, high_id = _ordered_pair(user.id, target.id)
     existing = (
@@ -271,7 +292,9 @@ async def send_message(
         try:
             sender = await _social_user(session, user.id)
             await get_firebase_push_service().send_new_message(
-                fids=fids, sender_name=sender.display_name
+                fids=fids,
+                sender_name=sender.display_name,
+                message_preview=message.body,
             )
         except Exception:
             logger.exception("Push notification could not be sent")
@@ -281,6 +304,11 @@ async def send_message(
 async def _accepted_friendship(
     session: AsyncSession, user_id: uuid.UUID, other_id: uuid.UUID
 ) -> FriendshipModel:
+    if await _users_blocked(session, user_id, other_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bu kullanıcıyla mesajlaşamazsın.",
+        )
     low_id, high_id = _ordered_pair(user_id, other_id)
     friendship = (
         await session.execute(
@@ -298,6 +326,36 @@ async def _accepted_friendship(
     return friendship
 
 
+async def _blocked_user_ids(session: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
+    rows = await session.execute(
+        select(UserBlockModel.blocker_id, UserBlockModel.blocked_id).where(
+            or_(UserBlockModel.blocker_id == user_id, UserBlockModel.blocked_id == user_id)
+        )
+    )
+    return {
+        blocked_id if blocker_id == user_id else blocker_id
+        for blocker_id, blocked_id in rows
+    }
+
+
+async def _users_blocked(
+    session: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID
+) -> bool:
+    return (
+        await session.scalar(
+            select(func.count(UserBlockModel.id)).where(
+                or_(
+                    (UserBlockModel.blocker_id == first_id)
+                    & (UserBlockModel.blocked_id == second_id),
+                    (UserBlockModel.blocker_id == second_id)
+                    & (UserBlockModel.blocked_id == first_id),
+                )
+            )
+        )
+        or 0
+    ) > 0
+
+
 async def _social_user(
     session: AsyncSession, user_id: uuid.UUID, *, unread_count: int = 0
 ) -> SocialUserResponse:
@@ -309,7 +367,9 @@ async def _social_user(
     ).scalar_one_or_none()
     return SocialUserResponse(
         id=user.id,
-        display_name=profile.name if profile else user.email.split("@", 1)[0],
+        display_name=(
+            user.display_name or (profile.name if profile else user.email.split("@", 1)[0])
+        ),
         olimora_id=user.olimora_id,
         unread_count=unread_count,
         is_online=(

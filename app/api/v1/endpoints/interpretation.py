@@ -2,7 +2,7 @@ import hashlib
 import json
 import time
 from collections import defaultdict, deque
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from datetime import time as datetime_time
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -42,6 +42,43 @@ from app.modules.interpretation.service import (
 
 router = APIRouter()
 _request_times: defaultdict[str, deque[float]] = defaultdict(deque)
+
+
+@router.get("/daily/history", response_model=list[DailyReadingResponse])
+async def daily_reading_history(
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> list[DailyReadingResponse]:
+    readings = (
+        await session.execute(
+            select(DailyReadingModel)
+            .where(DailyReadingModel.user_id == user.id)
+            .order_by(DailyReadingModel.reading_date.desc())
+            .limit(31)
+        )
+    ).scalars().all()
+    return [_daily_response(item, cached=True) for item in readings]
+
+
+@router.patch("/daily/{reading_date}/favorite", response_model=DailyReadingResponse)
+async def toggle_daily_favorite(
+    reading_date: date,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> DailyReadingResponse:
+    reading = (
+        await session.execute(
+            select(DailyReadingModel).where(
+                DailyReadingModel.user_id == user.id,
+                DailyReadingModel.reading_date == reading_date,
+            )
+        )
+    ).scalar_one_or_none()
+    if reading is None:
+        raise HTTPException(status_code=404, detail="Yorum arşivde bulunamadı.")
+    reading.is_favorite = not reading.is_favorite
+    await session.commit()
+    return _daily_response(reading, cached=True)
 
 
 @router.post("/daily-sign", response_model=DailySignReadingResponse)
@@ -245,6 +282,7 @@ def _daily_response(reading: DailyReadingModel, *, cached: bool) -> DailyReading
         source=reading.source,  # type: ignore[arg-type]
         model=reading.model,
         cached=cached,
+        is_favorite=reading.is_favorite,
     )
 
 

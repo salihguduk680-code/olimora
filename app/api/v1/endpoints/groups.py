@@ -128,6 +128,7 @@ async def send_group_message(
             await get_firebase_push_service().send_new_message(
                 fids=recipients,
                 sender_name=f"{group.name if group else 'Grup'} · {sender.display_name}",
+                message_preview=message.body,
             )
         except Exception:
             logger.exception("Group push notification could not be sent")

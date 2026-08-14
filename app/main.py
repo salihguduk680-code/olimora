@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from app.api.health import router as health_router
 from app.api.v1.router import router as api_v1_router
@@ -19,7 +21,9 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
-    async def security_middleware(request: Request, call_next):
+    async def security_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:

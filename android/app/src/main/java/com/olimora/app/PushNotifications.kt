@@ -29,8 +29,14 @@ internal suspend fun registerFirebaseInstallation(context: Context, authToken: S
 
 class OlimoraMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
-        val title = message.notification?.title ?: "Olimora'da yeni mesajın var"
-        val body = message.notification?.body ?: "Bir arkadaşın sana yazdı."
+        val senderName = message.data["sender_name"]
+        val preview = message.data["message_preview"]
+        val title = message.notification?.title
+            ?: senderName?.let { "$it sana yazdı" }
+            ?: "Olimora'da yeni mesajın var"
+        val body = message.notification?.body
+            ?: preview
+            ?: "Bir arkadaşın sana yazdı."
         applicationContext.showMessageNotification(unreadCount = 1, title = title, body = body)
     }
 }

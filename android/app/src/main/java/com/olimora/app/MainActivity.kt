@@ -101,6 +101,7 @@ import com.olimora.app.ui.theme.SoftSurface
 import com.olimora.app.data.AccountSession
 import com.olimora.app.data.ApiException
 import com.olimora.app.data.CountryLocation
+import com.olimora.app.data.CompatibilityResult
 import com.olimora.app.data.SessionStore
 import com.olimora.app.data.authenticate
 import com.olimora.app.data.fetchSavedBirthProfile
@@ -128,6 +129,9 @@ import com.olimora.app.data.declineFriendRequest
 import com.olimora.app.data.deleteAccount
 import com.olimora.app.data.fetchMessages
 import com.olimora.app.data.fetchGroups
+import com.olimora.app.data.fetchCompatibility
+import com.olimora.app.data.fetchDailyReadingHistory
+import com.olimora.app.data.toggleDailyReadingFavorite
 import com.olimora.app.data.fetchGroupMessages
 import com.olimora.app.data.createGroup
 import com.olimora.app.data.sendGroupMessage
@@ -135,7 +139,11 @@ import com.olimora.app.data.leaveGroup
 import com.olimora.app.data.fetchSocialOverview
 import com.olimora.app.data.sendDirectMessage
 import com.olimora.app.data.sendFriendRequest
+import com.olimora.app.data.reportUser
+import com.olimora.app.data.blockUser
+import com.olimora.app.data.submitAthenaFeedback
 import com.olimora.app.data.updateSocialStatus
+import com.olimora.app.data.updateSocialDisplayName
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -180,6 +188,7 @@ class MainActivity : ComponentActivity() {
                     )
                 } else if (isDebuggable && intent.getBooleanExtra("premium_design_preview", false)) {
                     ChartResultScreen(
+                        authToken = null,
                         name = "Salih",
                         birthDate = "12.03.2002",
                         birthTime = "20:00",
@@ -201,6 +210,7 @@ class MainActivity : ComponentActivity() {
                         dailySignReadingLoading = false,
                         dailySignReadingError = null,
                         onRequestDailySignReading = {},
+                        onReportAthena = {},
                         betaPremiumEnabled = true,
                         premiumDailyReading = null,
                         premiumDailyReadingLoading = false,
@@ -623,6 +633,7 @@ fun OlimoraApp() {
                     ) { page ->
                         if (page == 0) {
                             ChartResultScreen(
+                            authToken = authToken,
                             name = name.ifBlank { "Gökyüzü Yolcusu" },
                             birthDate = birthDate,
                             birthTime = birthTime,
@@ -646,6 +657,13 @@ fun OlimoraApp() {
                                         } finally {
                                             dailySignReadingLoading = false
                                         }
+                                    }
+                                }
+                            },
+                            onReportAthena = { reason ->
+                                authToken?.let { token ->
+                                    coroutineScope.launch {
+                                        submitAthenaFeedback(token, "natal", reason)
                                     }
                                 }
                             },
@@ -1516,6 +1534,7 @@ private fun SelectionField(
 
 @Composable
 private fun ChartResultScreen(
+    authToken: String?,
     name: String,
     birthDate: String,
     birthTime: String,
@@ -1527,6 +1546,7 @@ private fun ChartResultScreen(
     dailySignReadingLoading: Boolean,
     dailySignReadingError: String?,
     onRequestDailySignReading: () -> Unit,
+    onReportAthena: (String) -> Unit,
     betaPremiumEnabled: Boolean,
     premiumDailyReading: DailyReading?,
     premiumDailyReadingLoading: Boolean,
@@ -1535,6 +1555,12 @@ private fun ChartResultScreen(
 ) {
     val context = LocalContext.current
     var detailsExpanded by remember { mutableStateOf(false) }
+    var showAthenaFeedback by remember { mutableStateOf(false) }
+    var athenaFeedbackSent by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var readingHistory by remember { mutableStateOf<List<DailyReading>>(emptyList()) }
+    var historyLoading by remember { mutableStateOf(false) }
+    var selectedHistoryReading by remember { mutableStateOf<DailyReading?>(null) }
     val now = remember { Calendar.getInstance() }
     val greeting = when (now.get(Calendar.HOUR_OF_DAY)) {
         in 5..11 -> "Günaydın"
@@ -1622,6 +1648,11 @@ private fun ChartResultScreen(
             BigThreeCard(signSymbol(chartResult.ascendantSign), "Yükselen", signName(chartResult.ascendantSign), chartResult.ascendantDegree, Modifier.weight(1f))
         }
 
+        ChartSignatureCard(
+            chart = chartResult,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+
         Text(
             text = "Doğum haritanın özeti",
             modifier = Modifier.padding(top = 22.dp, bottom = 10.dp),
@@ -1648,7 +1679,43 @@ private fun ChartResultScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                 )
+                TextButton(
+                    onClick = { showAthenaFeedback = true },
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Text(if (athenaFeedbackSent) "Geri bildirimin alındı" else "Bu yorumu bildir")
+                }
             }
+        }
+
+        if (showAthenaFeedback) {
+            AlertDialog(
+                onDismissRequest = { showAthenaFeedback = false },
+                title = { Text("Athena yorumu hakkında") },
+                text = {
+                    Column {
+                        listOf(
+                            "unsafe" to "Güvensiz veya sakıncalı",
+                            "incorrect" to "Yanlış ya da alakasız",
+                            "offensive" to "Kırıcı veya uygunsuz",
+                            "other" to "Başka bir sorun",
+                        ).forEach { (reason, label) ->
+                            TextButton(
+                                onClick = {
+                                    onReportAthena(reason)
+                                    athenaFeedbackSent = true
+                                    showAthenaFeedback = false
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(label, modifier = Modifier.fillMaxWidth()) }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAthenaFeedback = false }) { Text("Vazgeç") }
+                },
+                shape = RoundedCornerShape(22.dp),
+            )
         }
 
         Text(
@@ -1715,7 +1782,21 @@ private fun ChartResultScreen(
             error = premiumDailyReadingError,
             onRequestReading = onRequestPremiumDailyReading,
         )
-        ReadingHistoryPreview(todayReady = dailySignReading != null)
+        ReadingHistoryPreview(
+            todayReady = dailySignReading != null,
+            history = readingHistory,
+            loading = historyLoading,
+            onLoad = {
+                val token = authToken ?: return@ReadingHistoryPreview
+                historyLoading = true
+                coroutineScope.launch {
+                    runCatching { fetchDailyReadingHistory(token) }
+                        .onSuccess { readingHistory = it }
+                    historyLoading = false
+                }
+            },
+            onSelect = { selectedHistoryReading = it },
+        )
 
         Button(
             onClick = { detailsExpanded = !detailsExpanded },
@@ -1733,6 +1814,40 @@ private fun ChartResultScreen(
             ChartDetailsSection(chartResult)
         }
         Spacer(Modifier.height(24.dp))
+    }
+    selectedHistoryReading?.let { reading ->
+        AlertDialog(
+            onDismissRequest = { selectedHistoryReading = null },
+            title = { Text("${reading.date} yorumu") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    PremiumReadingSection("Ana tema", reading.mainTheme)
+                    PremiumReadingSection("İlişkiler", reading.relationships)
+                    PremiumReadingSection("İş ve para", reading.workMoney)
+                    PremiumReadingSection("Dikkat", reading.caution)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val token = authToken ?: return@TextButton
+                        coroutineScope.launch {
+                            runCatching { toggleDailyReadingFavorite(token, reading.date) }
+                                .onSuccess { updated ->
+                                    readingHistory = readingHistory.map {
+                                        if (it.date == updated.date) updated else it
+                                    }
+                                    selectedHistoryReading = updated
+                                }
+                        }
+                    }
+                ) { Text(if (reading.isFavorite) "★ Favoriden çıkar" else "☆ Favoriye ekle") }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedHistoryReading = null }) { Text("Kapat") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
     }
 }
 
@@ -1927,7 +2042,13 @@ private fun PremiumBenefit(text: String) {
 }
 
 @Composable
-private fun ReadingHistoryPreview(todayReady: Boolean) {
+private fun ReadingHistoryPreview(
+    todayReady: Boolean,
+    history: List<DailyReading>,
+    loading: Boolean,
+    onLoad: () -> Unit,
+    onSelect: (DailyReading) -> Unit,
+) {
     val days = remember {
         List(7) { offset ->
             Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset - 6) }
@@ -1940,7 +2061,7 @@ private fun ReadingHistoryPreview(todayReady: Boolean) {
         fontSize = 20.sp,
     )
     Text(
-        "Bugün ücretsiz; önceki günlerin arşivi Premium ile açılır.",
+        "Kişisel yorumlarını sakla, geçmişe dön ve favorilerini işaretle.",
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
     )
@@ -1973,6 +2094,35 @@ private fun ReadingHistoryPreview(todayReady: Boolean) {
                         fontSize = 10.sp,
                     )
                 }
+            }
+        }
+    }
+    OutlinedButton(
+        onClick = onLoad,
+        enabled = !loading,
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        shape = RoundedCornerShape(14.dp),
+    ) { Text(if (loading) "Arşiv yükleniyor…" else "Yorum arşivimi aç") }
+    history.take(7).forEach { reading ->
+        Card(
+            onClick = { onSelect(reading) },
+            modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (reading.isFavorite) "★" else "✦", color = Gold, fontSize = 18.sp)
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(reading.date, fontWeight = FontWeight.Medium)
+                    Text(
+                        reading.mainTheme,
+                        maxLines = 2,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Text("›", color = PrimaryPurple, fontSize = 22.sp)
             }
         }
     }
@@ -2037,6 +2187,8 @@ private fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     var myProfile by remember { mutableStateOf<SocialUser?>(null) }
     var statusUpdating by remember { mutableStateOf(false) }
+    var displayNameDraft by remember { mutableStateOf("") }
+    var displayNameUpdating by remember { mutableStateOf(false) }
     var showAiInfo by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var deletingAccount by remember { mutableStateOf(false) }
@@ -2050,6 +2202,7 @@ private fun SettingsScreen(
     )
     LaunchedEffect(token) {
         myProfile = token?.let { runCatching { fetchSocialOverview(it).me }.getOrNull() }
+        displayNameDraft = myProfile?.displayName ?: profileName
     }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -2068,10 +2221,10 @@ private fun SettingsScreen(
                         Modifier.size(54.dp).background(Color.White.copy(alpha = 0.14f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(profileName.take(1).uppercase(), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Text((myProfile?.displayName ?: profileName).take(1).uppercase(), color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     }
                     Column(Modifier.padding(start = 13.dp)) {
-                        Text(profileName, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                        Text(myProfile?.displayName ?: profileName, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                         Text(accountEmail.orEmpty(), color = Color.White.copy(alpha = 0.68f), style = MaterialTheme.typography.bodySmall)
                         myProfile?.olimoraId?.let { olimoraId ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2108,6 +2261,37 @@ private fun SettingsScreen(
         }
 
         Text("Profil", fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 9.dp))
+        OutlinedTextField(
+            value = displayNameDraft,
+            onValueChange = { if (it.length <= 30) displayNameDraft = it },
+            label = { Text("Sosyal rumuzun") },
+            supportingText = { Text("Arkadaşların, sohbetler ve bildirimler bu adı görür.") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Button(
+            onClick = {
+                val currentToken = token ?: return@Button
+                displayNameUpdating = true
+                coroutineScope.launch {
+                    runCatching { updateSocialDisplayName(currentToken, displayNameDraft) }
+                        .onSuccess {
+                            myProfile = it
+                            settingsMessage = "Rumuzun güncellendi."
+                            settingsMessageIsError = false
+                        }
+                        .onFailure {
+                            settingsMessage = it.message ?: "Rumuz güncellenemedi."
+                            settingsMessageIsError = true
+                        }
+                    displayNameUpdating = false
+                }
+            },
+            enabled = displayNameDraft.trim().length in 2..30 && !displayNameUpdating,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) { Text(if (displayNameUpdating) "Kaydediliyor…" else "Rumuzu kaydet") }
         SelectionField(
             label = "Kısa durumun",
             value = myProfile?.statusMessage ?: "Bir durum seç",
@@ -2657,6 +2841,14 @@ private fun ConversationScreen(
     var sending by remember(friend.id) { mutableStateOf(false) }
     val messageListState = rememberLazyListState()
     var liveFriend by remember(friend.id) { mutableStateOf(friend) }
+    var menuExpanded by remember(friend.id) { mutableStateOf(false) }
+    var showReportDialog by remember(friend.id) { mutableStateOf(false) }
+    var showBlockDialog by remember(friend.id) { mutableStateOf(false) }
+    var moderationMessage by remember(friend.id) { mutableStateOf<String?>(null) }
+    var compatibility by remember(friend.id) { mutableStateOf<CompatibilityResult?>(null) }
+    var compatibilityLoading by remember(friend.id) { mutableStateOf(false) }
+    var compatibilityError by remember(friend.id) { mutableStateOf<String?>(null) }
+    var showCompatibility by remember(friend.id) { mutableStateOf(false) }
 
     LaunchedEffect(friend.id) {
         if (previewMessages != null) return@LaunchedEffect
@@ -2745,7 +2937,34 @@ private fun ConversationScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                Box {
+                    TextButton(onClick = { menuExpanded = true }) {
+                        Text("⋮", fontSize = 25.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Kullanıcıyı veya sohbeti bildir") },
+                            onClick = {
+                                menuExpanded = false
+                                showReportDialog = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Kullanıcıyı engelle", color = Color(0xFFB3261E)) },
+                            onClick = {
+                                menuExpanded = false
+                                showBlockDialog = true
+                            },
+                        )
+                    }
+                }
             }
+        }
+        moderationMessage?.let {
+            StatusNotice(message = it, isError = false, modifier = Modifier.padding(bottom = 8.dp))
         }
         PullToRefreshBox(
             isRefreshing = loading,
@@ -2757,7 +2976,29 @@ private fun ConversationScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Bottom,
             ) {
-                item { CompatibilityPreviewCard(friendName = liveFriend.displayName) }
+                item {
+                    CompatibilityPreviewCard(
+                        friendName = liveFriend.displayName,
+                        loading = compatibilityLoading,
+                        onClick = {
+                            if (previewMessages != null) return@CompatibilityPreviewCard
+                            compatibilityLoading = true
+                            compatibilityError = null
+                            coroutineScope.launch {
+                                runCatching { fetchCompatibility(token, friend.id) }
+                                    .onSuccess {
+                                        compatibility = it
+                                        showCompatibility = true
+                                    }
+                                    .onFailure { compatibilityError = it.message }
+                                compatibilityLoading = false
+                            }
+                        },
+                    )
+                }
+                compatibilityError?.let { message ->
+                    item { StatusNotice(message, true, Modifier.padding(vertical = 4.dp)) }
+                }
                 if (loading && messages.isEmpty()) {
                     item {
                         Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2837,6 +3078,69 @@ private fun ConversationScreen(
                 }
             }
         }
+    }
+
+    if (showReportDialog) {
+        AlertDialog(
+            onDismissRequest = { showReportDialog = false },
+            title = { Text("Bildir") },
+            text = {
+                Column {
+                    Text("Bu bildirim yalnızca inceleme amacıyla kaydedilir.")
+                    listOf(
+                        "spam" to "Spam",
+                        "harassment" to "Taciz veya zorbalık",
+                        "inappropriate" to "Uygunsuz içerik",
+                        "other" to "Diğer",
+                    ).forEach { (reason, label) ->
+                        TextButton(
+                            onClick = {
+                                showReportDialog = false
+                                coroutineScope.launch {
+                                    runCatching { reportUser(token, friend.id, reason) }
+                                        .onSuccess { moderationMessage = "Bildirimin alındı. Teşekkürler." }
+                                        .onFailure { moderationMessage = it.message ?: "Bildirim gönderilemedi." }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(label, modifier = Modifier.fillMaxWidth()) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReportDialog = false }) { Text("Vazgeç") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+    if (showBlockDialog) {
+        AlertDialog(
+            onDismissRequest = { showBlockDialog = false },
+            title = { Text("${friend.displayName} engellensin mi?") },
+            text = { Text("Arkadaşlığınız kaldırılır ve birbirinize yeniden istek ya da mesaj gönderemezsiniz.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlockDialog = false
+                        coroutineScope.launch {
+                            runCatching { blockUser(token, friend.id) }
+                                .onSuccess { onBack() }
+                                .onFailure { moderationMessage = it.message ?: "Kullanıcı engellenemedi." }
+                        }
+                    }
+                ) { Text("Engelle", color = Color(0xFFB3261E)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockDialog = false }) { Text("Vazgeç") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+    if (showCompatibility && compatibility != null) {
+        CompatibilityDialog(
+            result = compatibility!!,
+            onDismiss = { showCompatibility = false },
+        )
     }
 }
 
@@ -3032,8 +3336,13 @@ private fun GroupMessageBubble(message: GroupMessage) {
 }
 
 @Composable
-private fun CompatibilityPreviewCard(friendName: String) {
+private fun CompatibilityPreviewCard(
+    friendName: String,
+    loading: Boolean = false,
+    onClick: () -> Unit = {},
+) {
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.08f)),
         border = BorderStroke(1.dp, Gold.copy(alpha = 0.45f)),
@@ -3052,8 +3361,65 @@ private fun CompatibilityPreviewCard(friendName: String) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Text("Premium", color = Color(0xFF9A6812), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(
+                if (loading) "Hesaplanıyor…" else "Karşılaştır",
+                color = Color(0xFF9A6812),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
+    }
+}
+
+@Composable
+private fun CompatibilityDialog(result: CompatibilityResult, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${result.friendName} ile sinastri") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                CompatibilityScore("İletişim", result.communication)
+                CompatibilityScore("Duygusal akış", result.emotional)
+                CompatibilityScore("Çekim", result.attraction)
+                CompatibilityScore("Uzun vadeli denge", result.stability)
+                if (result.highlights.isNotEmpty()) {
+                    Text(
+                        "Öne çıkan açılar",
+                        modifier = Modifier.padding(top = 16.dp, bottom = 6.dp),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    result.highlights.take(5).forEach { aspect ->
+                        Text(
+                            "${planetName(aspect.personABody)} – ${planetName(aspect.personBBody)} · " +
+                                "${aspectName(aspect.aspectType)} (${String.format(Locale.ROOT, "%.1f°", aspect.orb)})",
+                            modifier = Modifier.padding(vertical = 3.dp),
+                            color = if (aspect.tone == "supportive") Color(0xFF2E7D5B)
+                            else MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                Text(
+                    result.disclaimer,
+                    modifier = Modifier.padding(top = 14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } },
+        shape = RoundedCornerShape(22.dp),
+    )
+}
+
+@Composable
+private fun CompatibilityScore(label: String, score: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Text("$score / 100", color = PrimaryPurple, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -3773,6 +4139,58 @@ private fun BigThreeCard(
                 fontSize = 11.sp,
             )
         }
+    }
+}
+
+@Composable
+private fun ChartSignatureCard(chart: BigThreeResult, modifier: Modifier = Modifier) {
+    val elements = mapOf(
+        "aries" to "Ateş", "leo" to "Ateş", "sagittarius" to "Ateş",
+        "taurus" to "Toprak", "virgo" to "Toprak", "capricorn" to "Toprak",
+        "gemini" to "Hava", "libra" to "Hava", "aquarius" to "Hava",
+        "cancer" to "Su", "scorpio" to "Su", "pisces" to "Su",
+    )
+    val dominantElement = chart.positions
+        .mapNotNull { elements[it.sign.lowercase()] }
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key ?: "Dengeli"
+    val retrogradeCount = chart.positions.count { it.isRetrograde }
+    val emphasizedHouse = chart.positions
+        .mapNotNull { it.house }
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key
+
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = PrimaryPurple.copy(alpha = 0.07f),
+        ),
+        border = BorderStroke(1.dp, PrimaryPurple.copy(alpha = 0.22f)),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Haritanın imzası", color = PrimaryPurple, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 9.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                SignatureMetric("Baskın element", dominantElement)
+                SignatureMetric("Retro gezegen", retrogradeCount.toString())
+                SignatureMetric("Vurgulu ev", emphasizedHouse?.let { "$it. ev" } ?: "—")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignatureMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

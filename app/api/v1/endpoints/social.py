@@ -20,6 +20,7 @@ from app.api.v1.schemas.social import (
     StatusUpdate,
 )
 from app.core.config import get_settings
+from app.core.content_moderation import ensure_allowed_user_content
 from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import (
     BirthProfileModel,
@@ -274,7 +275,9 @@ async def send_message(
             detail="Çok hızlı mesaj gönderiyorsun. Biraz bekleyip tekrar dene.",
         )
     message = DirectMessageModel(
-        friendship_id=friendship.id, sender_id=user.id, body=request.body
+        friendship_id=friendship.id,
+        sender_id=user.id,
+        body=ensure_allowed_user_content(request.body),
     )
     session.add(message)
     await session.commit()

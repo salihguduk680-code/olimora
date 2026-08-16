@@ -96,3 +96,29 @@ async def delete_me(
 ) -> None:
     await session.delete(user)
     await session.commit()
+
+
+@router.post("/delete-account", status_code=204)
+async def delete_account_with_credentials(
+    request: CredentialsRequest,
+    http_request: Request,
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> None:
+    email = str(request.email).strip().lower()
+    key = _attempt_key("delete", email, http_request)
+    if not _auth_limiter.consume(key, limit=5, window_seconds=60 * 60):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla silme denemesi yapıldı. Daha sonra tekrar dene.",
+        )
+    user = (
+        await session.execute(select(UserModel).where(UserModel.email == email))
+    ).scalar_one_or_none()
+    if user is None or not verify_password(request.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-posta veya şifre hatalı.",
+        )
+    await session.delete(user)
+    await session.commit()
+    _auth_limiter.clear(key)

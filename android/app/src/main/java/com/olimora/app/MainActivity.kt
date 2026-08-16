@@ -54,6 +54,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -694,6 +695,7 @@ fun OlimoraApp() {
                             authToken?.let { token ->
                                 SocialScreen(
                                     token = token,
+                                    betaPremiumEnabled = betaPremiumEnabled,
                                     onConversationChanged = { isConversationOpen = it },
                                 )
                             }
@@ -809,10 +811,13 @@ private fun OlimoraOnboardingDialog(step: Int, onNext: () -> Unit, onSkip: () ->
 @Composable
 private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordConfirmation by remember { mutableStateOf("") }
     var registerMode by remember { mutableStateOf(true) }
+    var ageConfirmed by remember { mutableStateOf(false) }
+    var termsAccepted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -882,6 +887,32 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = ageConfirmed,
+                    onCheckedChange = { ageConfirmed = it; error = null },
+                )
+                Text("13 yaş veya üzerindeyim.", style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = termsAccepted,
+                    onCheckedChange = { termsAccepted = it; error = null },
+                )
+                Column {
+                    Text("Kullanım koşullarını ve gizlilik politikasını kabul ediyorum.", style = MaterialTheme.typography.bodyMedium)
+                    Row {
+                        TextButton(onClick = { openWebPage(context, "https://olimora-production.up.railway.app/terms") }) { Text("Koşullar") }
+                        TextButton(onClick = { openWebPage(context, "https://olimora-production.up.railway.app/privacy") }) { Text("Gizlilik") }
+                    }
+                }
+            }
         }
         error?.let { message ->
             StatusNotice(message = message, isError = true, modifier = Modifier.padding(top = 10.dp))
@@ -896,6 +927,10 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
                     error = "Yeni şifren en az 10 karakter, bir harf ve bir rakam içermeli."
                 } else if (registerMode && password != passwordConfirmation) {
                     error = "Yazdığın iki şifre birbiriyle aynı değil."
+                } else if (registerMode && !ageConfirmed) {
+                    error = "Hesap açmak için 13 yaş veya üzerinde olduğunu doğrulamalısın."
+                } else if (registerMode && !termsAccepted) {
+                    error = "Devam etmek için kullanım koşullarını ve gizlilik politikasını kabul etmelisin."
                 } else {
                     loading = true
                     error = null
@@ -921,6 +956,8 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
             onClick = {
                 registerMode = !registerMode
                 passwordConfirmation = ""
+                ageConfirmed = false
+                termsAccepted = false
                 error = null
             },
             modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -2049,6 +2086,7 @@ private fun ReadingHistoryPreview(
     onLoad: () -> Unit,
     onSelect: (DailyReading) -> Unit,
 ) {
+    var archiveExpanded by remember { mutableStateOf(false) }
     val days = remember {
         List(7) { offset ->
             Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset - 6) }
@@ -2071,14 +2109,19 @@ private fun ReadingHistoryPreview(
     ) {
         days.forEachIndexed { index, day ->
             val isToday = index == days.lastIndex
+            val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(day.time)
+            val readingForDay = history.firstOrNull { it.date == dateKey }
             Card(
+                onClick = { readingForDay?.let(onSelect) },
+                enabled = readingForDay != null,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isToday) PrimaryPurple.copy(alpha = 0.12f)
+                    containerColor = if (readingForDay != null) PrimaryPurple.copy(alpha = 0.12f)
                     else MaterialTheme.colorScheme.surface
                 ),
                 border = BorderStroke(
                     1.dp,
-                    if (isToday) PrimaryPurple.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline,
+                    if (readingForDay != null) PrimaryPurple.copy(alpha = 0.6f)
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                 ),
                 shape = RoundedCornerShape(15.dp),
             ) {
@@ -2089,8 +2132,14 @@ private fun ReadingHistoryPreview(
                     Text(SimpleDateFormat("EEE", Locale.forLanguageTag("tr-TR")).format(day.time), fontSize = 11.sp)
                     Text(day.get(Calendar.DAY_OF_MONTH).toString(), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                     Text(
-                        if (isToday && todayReady) "✓" else if (isToday) "Bugün" else "🔒",
-                        color = if (isToday) PrimaryPurple else MaterialTheme.colorScheme.onSurfaceVariant,
+                        when {
+                            readingForDay != null -> "Aç"
+                            isToday && todayReady -> "Hazır"
+                            isToday -> "Bugün"
+                            else -> "Kilitli"
+                        },
+                        color = if (readingForDay != null || isToday) PrimaryPurple
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp,
                     )
                 }
@@ -2098,12 +2147,31 @@ private fun ReadingHistoryPreview(
         }
     }
     OutlinedButton(
-        onClick = onLoad,
+        onClick = {
+            if (history.isEmpty()) onLoad()
+            archiveExpanded = !archiveExpanded
+        },
         enabled = !loading,
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         shape = RoundedCornerShape(14.dp),
-    ) { Text(if (loading) "Arşiv yükleniyor…" else "Yorum arşivimi aç") }
-    history.take(7).forEach { reading ->
+    ) {
+        Text(
+            when {
+                loading -> "Arşiv yükleniyor…"
+                archiveExpanded -> "Yorum arşivini gizle"
+                else -> "Yorum arşivimi aç"
+            }
+        )
+    }
+    if (archiveExpanded && !loading && history.isEmpty()) {
+        Text(
+            "Henüz arşivlenmiş bir kişisel yorumun yok.",
+            modifier = Modifier.padding(top = 10.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (archiveExpanded) history.take(7).forEach { reading ->
         Card(
             onClick = { onSelect(reading) },
             modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
@@ -2475,6 +2543,7 @@ private fun SettingsAction(
 @Composable
 private fun SocialScreen(
     token: String,
+    betaPremiumEnabled: Boolean,
     onConversationChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -2486,6 +2555,11 @@ private fun SocialScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
+    var compatibility by remember { mutableStateOf<CompatibilityResult?>(null) }
+    var compatibilityFriend by remember { mutableStateOf<SocialUser?>(null) }
+    var compatibilityLoading by remember { mutableStateOf(false) }
+    var compatibilityError by remember { mutableStateOf<String?>(null) }
+    var showPremiumNotice by remember { mutableStateOf(false) }
 
     fun closeConversation() {
         selectedFriend = null
@@ -2543,6 +2617,7 @@ private fun SocialScreen(
     var showCreateGroup by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
     var selectedGroupMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var friendSearch by remember { mutableStateOf("") }
     PullToRefreshBox(
         isRefreshing = loading,
         onRefresh = { refreshKey += 1 },
@@ -2647,14 +2722,59 @@ private fun SocialScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        friends.forEach { friend ->
+        if (friends.size >= 4) {
+            OutlinedTextField(
+                value = friendSearch,
+                onValueChange = { friendSearch = it.take(40) },
+                label = { Text("Arkadaşlarda ara") },
+                placeholder = { Text("İsim veya rumuz") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                shape = RoundedCornerShape(14.dp),
+            )
+        }
+        val visibleFriends = friends.filter { friend ->
+            friendSearch.isBlank() || friend.displayName.contains(friendSearch.trim(), ignoreCase = true)
+        }
+        if (friends.isNotEmpty() && visibleFriends.isEmpty()) {
+            Text(
+                "Bu isimle eşleşen bir arkadaş bulunamadı.",
+                modifier = Modifier.padding(vertical = 10.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        visibleFriends.forEach { friend ->
             FriendRow(
                 friend = friend,
                 onClick = {
                     selectedFriend = friend
                     onConversationChanged(true)
                 },
+                onCompare = {
+                    if (!betaPremiumEnabled) {
+                        showPremiumNotice = true
+                    } else {
+                        compatibilityLoading = true
+                        compatibilityFriend = friend
+                        compatibilityError = null
+                        coroutineScope.launch {
+                            runCatching { fetchCompatibility(token, friend.id) }
+                                .onSuccess {
+                                    compatibility = it
+                                    compatibilityFriend = friend
+                                }
+                                .onFailure { compatibilityError = it.message }
+                            compatibilityLoading = false
+                        }
+                    }
+                },
+                comparisonLoading = compatibilityLoading && compatibilityFriend?.id == friend.id,
             )
+        }
+
+        compatibilityError?.let { message ->
+            StatusNotice(message, true, Modifier.padding(top = 4.dp))
         }
 
         overview?.outgoing?.takeIf { it.isNotEmpty() }?.let { requests ->
@@ -2690,6 +2810,30 @@ private fun SocialScreen(
         }
             Spacer(Modifier.height(28.dp))
         }
+    }
+
+    compatibility?.let { result ->
+        CompatibilityDialog(result = result, onDismiss = {
+            compatibility = null
+            compatibilityFriend = null
+        })
+    }
+    if (showPremiumNotice) {
+        AlertDialog(
+            onDismissRequest = { showPremiumNotice = false },
+            icon = { Text("✦", color = Gold, fontSize = 28.sp) },
+            title = { Text("Premium harita karşılaştırması") },
+            text = {
+                Text(
+                    "İki doğum haritasının iletişim, duygu, çekim ve uzun vadeli denge analizini " +
+                        "Athena Premium ile açabilirsin. Beta döneminde Ayarlar’dan ücretsiz test erişimini etkinleştirebilirsin."
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showPremiumNotice = false }) { Text("Anladım") }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
     }
 
     if (showAddFriend) {
@@ -2845,10 +2989,6 @@ private fun ConversationScreen(
     var showReportDialog by remember(friend.id) { mutableStateOf(false) }
     var showBlockDialog by remember(friend.id) { mutableStateOf(false) }
     var moderationMessage by remember(friend.id) { mutableStateOf<String?>(null) }
-    var compatibility by remember(friend.id) { mutableStateOf<CompatibilityResult?>(null) }
-    var compatibilityLoading by remember(friend.id) { mutableStateOf(false) }
-    var compatibilityError by remember(friend.id) { mutableStateOf<String?>(null) }
-    var showCompatibility by remember(friend.id) { mutableStateOf(false) }
 
     LaunchedEffect(friend.id) {
         if (previewMessages != null) return@LaunchedEffect
@@ -2976,29 +3116,6 @@ private fun ConversationScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Bottom,
             ) {
-                item {
-                    CompatibilityPreviewCard(
-                        friendName = liveFriend.displayName,
-                        loading = compatibilityLoading,
-                        onClick = {
-                            if (previewMessages != null) return@CompatibilityPreviewCard
-                            compatibilityLoading = true
-                            compatibilityError = null
-                            coroutineScope.launch {
-                                runCatching { fetchCompatibility(token, friend.id) }
-                                    .onSuccess {
-                                        compatibility = it
-                                        showCompatibility = true
-                                    }
-                                    .onFailure { compatibilityError = it.message }
-                                compatibilityLoading = false
-                            }
-                        },
-                    )
-                }
-                compatibilityError?.let { message ->
-                    item { StatusNotice(message, true, Modifier.padding(vertical = 4.dp)) }
-                }
                 if (loading && messages.isEmpty()) {
                     item {
                         Text("Mesajlar yükleniyor…", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -3134,12 +3251,6 @@ private fun ConversationScreen(
                 TextButton(onClick = { showBlockDialog = false }) { Text("Vazgeç") }
             },
             shape = RoundedCornerShape(22.dp),
-        )
-    }
-    if (showCompatibility && compatibility != null) {
-        CompatibilityDialog(
-            result = compatibility!!,
-            onDismiss = { showCompatibility = false },
         )
     }
 }
@@ -3331,42 +3442,6 @@ private fun GroupMessageBubble(message: GroupMessage) {
                     fontSize = 10.sp,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun CompatibilityPreviewCard(
-    friendName: String,
-    loading: Boolean = false,
-    onClick: () -> Unit = {},
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, Gold.copy(alpha = 0.45f)),
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("✦", color = Gold, fontSize = 22.sp)
-            Column(Modifier.weight(1f).padding(horizontal = 11.dp)) {
-                Text("$friendName ile haritalarınızı karşılaştır", fontWeight = FontWeight.Medium)
-                Text(
-                    "İletişim, duygu ve ortak enerji başlıkları",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(
-                if (loading) "Hesaplanıyor…" else "Karşılaştır",
-                color = Color(0xFF9A6812),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-            )
         }
     }
 }
@@ -3577,34 +3652,62 @@ private fun GroupRow(group: SocialGroup, onClick: () -> Unit) {
 }
 
 @Composable
-private fun FriendRow(friend: SocialUser, onClick: () -> Unit) {
-    OutlinedButton(
+private fun FriendRow(
+    friend: SocialUser,
+    onClick: () -> Unit,
+    onCompare: () -> Unit,
+    comparisonLoading: Boolean,
+) {
+    var menuExpanded by remember(friend.id) { mutableStateOf(false) }
+    Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shape = RoundedCornerShape(14.dp),
-        contentPadding = PaddingValues(14.dp),
     ) {
-        Box(
-            modifier = Modifier.size(42.dp).background(SoftSurface, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Text(friend.displayName.take(1).uppercase(), color = Gold) }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(friend.displayName, color = MaterialTheme.colorScheme.onSurface)
-            friend.statusMessage?.let { status ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.size(42.dp).background(SoftSurface, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text(friend.displayName.take(1).uppercase(), color = Gold) }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(friend.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                friend.statusMessage?.let { status ->
+                    Text(status, color = PrimaryPurple, style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
-                    status,
-                    color = PrimaryPurple,
-                    style = MaterialTheme.typography.bodySmall,
+                    formatPresence(friend),
+                    color = if (friend.isOnline) Color(0xFF2E9B62)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
                 )
             }
-            Text(
-                formatPresence(friend),
-                color = if (friend.isOnline) Color(0xFF2E9B62)
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-            )
+            Text("Sohbet", color = PrimaryPurple, fontSize = 12.sp)
+            Box {
+                TextButton(onClick = { menuExpanded = true }) {
+                    Text("⋮", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 22.sp)
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (comparisonLoading) "Karşılaştırılıyor…"
+                                else "✦ Haritaları karşılaştır · Premium"
+                            )
+                        },
+                        enabled = !comparisonLoading,
+                        onClick = {
+                            menuExpanded = false
+                            onCompare()
+                        },
+                    )
+                }
+            }
         }
-        Text("Sohbet ›", color = PrimaryPurple)
     }
 }
 
@@ -3638,6 +3741,11 @@ private fun FriendRequestCard(
 @Composable
 private fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "—"
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -3650,6 +3758,24 @@ private fun AboutScreen(onBack: () -> Unit) {
             modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        AboutLink(
+            label = "Gizlilik politikası",
+            description = "Hangi verileri neden işlediğimizi görüntüle.",
+            onClick = { openWebPage(context, "https://olimora-production.up.railway.app/privacy") },
+        )
+        Spacer(Modifier.height(10.dp))
+        AboutLink(
+            label = "Kullanım ve topluluk koşulları",
+            description = "Topluluk kurallarını ve kullanım koşullarını görüntüle.",
+            onClick = { openWebPage(context, "https://olimora-production.up.railway.app/terms") },
+        )
+        Spacer(Modifier.height(10.dp))
+        AboutLink(
+            label = "Hesap silme sayfası",
+            description = "Uygulamaya erişemediğinde hesabını web üzerinden sil.",
+            onClick = { openWebPage(context, "https://olimora-production.up.railway.app/account-deletion") },
+        )
+        Spacer(Modifier.height(10.dp))
         AboutLink(
             label = "Destek ve geri bildirim",
             description = "Bir sorun bildir veya geliştirme önerini paylaş.",
@@ -3666,7 +3792,7 @@ private fun AboutScreen(onBack: () -> Unit) {
             },
         )
         Text(
-            "Astrolojik yorumlar eğlence ve öz farkındalık amaçlıdır.",
+            "Sürüm $versionName · Astrolojik yorumlar eğlence ve öz farkındalık amaçlıdır.",
             modifier = Modifier.padding(top = 20.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3679,6 +3805,10 @@ private fun AboutScreen(onBack: () -> Unit) {
             Text("Geri dön")
         }
     }
+}
+
+private fun openWebPage(context: Context, url: String) {
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 }
 
 @Composable

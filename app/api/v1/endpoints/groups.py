@@ -17,6 +17,7 @@ from app.api.v1.schemas.groups import (
     GroupResponse,
 )
 from app.core.config import get_settings
+from app.core.content_moderation import ensure_allowed_user_content
 from app.core.database import get_database_session
 from app.modules.astrology.infrastructure.models import (
     FirebaseInstallationModel,
@@ -104,7 +105,11 @@ async def send_group_message(
     ) or 0
     if recent_messages >= get_settings().messages_per_minute:
         raise HTTPException(status_code=429, detail="Çok hızlı mesaj gönderiyorsun.")
-    message = GroupMessageModel(group_id=group_id, sender_id=user.id, body=request.body)
+    message = GroupMessageModel(
+        group_id=group_id,
+        sender_id=user.id,
+        body=ensure_allowed_user_content(request.body),
+    )
     session.add(message)
     membership.last_read_at = datetime.now(UTC)
     await session.commit()

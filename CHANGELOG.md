@@ -1,5 +1,19 @@
 # Değişiklik günlüğü
 
+## 0.12.0-beta.1 — 2026-08-16
+
+- Yorum arşivi, kayıt bulunan gün kartına dokunarak açılacak şekilde sadeleştirildi.
+- Arkadaş karşılaştırması sohbet tepesinden kaldırılıp arkadaş işlem menüsüne taşındı.
+- Harita karşılaştırması Premium deneyimi olarak konumlandırıldı.
+- Kalabalık arkadaş listelerine isim ve rumuz araması eklendi.
+- Gizlilik politikası, kullanım/topluluk koşulları ve web hesap silme sayfası eklendi.
+- Yeni kayıtlara 13+ yaş ve gizlilik/koşul onayı eklendi.
+- Doğrudan ve grup mesajlarına yerel kötüye kullanım ve bağlantı spam denetimi eklendi.
+- R8 küçültme, mağaza imzalama şablonu ve Play Store yayın kontrol listesi hazırlandı.
+
+Bu sürüm mağaza öncesi kapalı beta testidir. Gerçek Premium aboneliği ve sunucu
+taraflı yetkilendirme ödeme altyapısıyla birlikte etkinleştirilecektir.
+
 ## 0.11.0-beta.1 — 2026-08-14
 
 - Arkadaşlar arasında gerçek natal harita uyumluluk analizi eklendi.

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str | None = None
     smtp_starttls: bool = True
+    brevo_api_key: str | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod

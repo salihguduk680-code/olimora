@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 def missing_mail_settings() -> tuple[str, ...]:
     """Return missing SMTP setting names without exposing their values."""
     settings = get_settings()
-    if settings.brevo_api_key:
+    brevo_api_key = (settings.brevo_api_key or "").strip()
+    if brevo_api_key:
         missing: list[str] = []
     else:
         required = {
@@ -33,6 +34,7 @@ def mail_configured() -> bool:
 
 async def send_account_email(to_email: str, subject: str, body: str) -> bool:
     settings = get_settings()
+    brevo_api_key = (settings.brevo_api_key or "").strip()
     smtp_host = settings.smtp_host
     smtp_from_email = settings.smtp_from_email or settings.smtp_username
     missing = missing_mail_settings()
@@ -46,7 +48,7 @@ async def send_account_email(to_email: str, subject: str, body: str) -> bool:
     message["Subject"] = subject
     message.set_content(body)
 
-    if settings.brevo_api_key:
+    if brevo_api_key:
         logger.info("Account email HTTPS delivery started")
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -54,7 +56,7 @@ async def send_account_email(to_email: str, subject: str, body: str) -> bool:
                     "https://api.brevo.com/v3/smtp/email",
                     headers={
                         "accept": "application/json",
-                        "api-key": settings.brevo_api_key,
+                        "api-key": brevo_api_key,
                         "content-type": "application/json",
                     },
                     json={
@@ -65,8 +67,14 @@ async def send_account_email(to_email: str, subject: str, body: str) -> bool:
                     },
                 )
                 response.raise_for_status()
-        except Exception:
-            logger.exception("Account email HTTPS delivery failed")
+        except Exception as exc:
+            # Some HTTP client errors include request headers in their message.
+            # Never log the exception text or traceback because those headers may
+            # contain the Brevo API key.
+            logger.error(
+                "Account email HTTPS delivery failed (%s)",
+                type(exc).__name__,
+            )
             return False
         logger.info("Account email HTTPS delivery completed")
         return True

@@ -13,11 +13,13 @@ def missing_mail_settings() -> tuple[str, ...]:
     settings = get_settings()
     required = {
         "SMTP_HOST": settings.smtp_host,
-        "SMTP_FROM_EMAIL": settings.smtp_from_email,
         "SMTP_USERNAME": settings.smtp_username,
         "SMTP_PASSWORD": settings.smtp_password,
     }
-    return tuple(name for name, value in required.items() if not value)
+    missing = [name for name, value in required.items() if not value]
+    if not settings.smtp_from_email and not settings.smtp_username:
+        missing.append("SMTP_FROM_EMAIL")
+    return tuple(missing)
 
 
 def mail_configured() -> bool:
@@ -27,7 +29,7 @@ def mail_configured() -> bool:
 async def send_account_email(to_email: str, subject: str, body: str) -> bool:
     settings = get_settings()
     smtp_host = settings.smtp_host
-    smtp_from_email = settings.smtp_from_email
+    smtp_from_email = settings.smtp_from_email or settings.smtp_username
     missing = missing_mail_settings()
     if missing:
         logger.warning("Account email skipped; missing SMTP settings: %s", ", ".join(missing))

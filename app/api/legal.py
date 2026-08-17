@@ -75,3 +75,46 @@ document.getElementById('delete-form').addEventListener('submit', async (event) 
 </script>
 """,
     )
+
+
+@router.get("/verify-email", response_class=HTMLResponse)
+async def verify_email_page() -> HTMLResponse:
+    return _page(
+        "E-posta adresini doğrula",
+        """
+<div class='card'><p id='result'>Bağlantı doğrulanıyor…</p></div>
+<script>
+(async () => {
+ const token=new URLSearchParams(location.search).get('token');
+ const result=document.getElementById('result');
+ if(!token){result.textContent='Doğrulama bağlantısı eksik.';return;}
+ const response=await fetch('/api/v1/auth/verify-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+ result.textContent=response.ok?'E-posta adresin doğrulandı. Artık Olimora uygulamasına dönebilirsin.':((await response.json()).detail||'Bağlantı doğrulanamadı.');
+})();
+</script>
+""",
+    )
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page() -> HTMLResponse:
+    return _page(
+        "Yeni şifre belirle",
+        """
+<div class='card'><form id='reset-form'><label>Yeni şifre</label><input id='password' type='password' autocomplete='new-password' minlength='10' required><label>Yeni şifre tekrar</label><input id='confirmation' type='password' autocomplete='new-password' minlength='10' required><button type='submit'>Şifremi yenile</button><p id='result' class='muted'>En az 10 karakter, bir harf ve bir rakam kullan.</p></form></div>
+<script>
+document.getElementById('reset-form').addEventListener('submit',async(event)=>{
+ event.preventDefault(); const result=document.getElementById('result');
+ const token=new URLSearchParams(location.search).get('token');
+ const password=document.getElementById('password').value;
+ if(!token){result.textContent='Şifre yenileme bağlantısı eksik.';return;}
+ if(password!==document.getElementById('confirmation').value){result.textContent='Şifreler eşleşmiyor.';return;}
+ if(password.length<10||!/[A-Za-zÇĞİÖŞÜçğıöşü]/.test(password)||!/[0-9]/.test(password)){result.textContent='Şifre en az 10 karakter, bir harf ve bir rakam içermeli.';return;}
+ result.textContent='Şifre güncelleniyor…';
+ const response=await fetch('/api/v1/auth/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,new_password:password})});
+ result.textContent=response.ok?'Şifren güncellendi. Artık uygulamadan giriş yapabilirsin.':((await response.json()).detail||'Şifre güncellenemedi.');
+ if(response.ok) document.getElementById('reset-form').reset();
+});
+</script>
+""",
+    )

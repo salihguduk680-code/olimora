@@ -40,6 +40,7 @@ class UserModel(Base):
         default=lambda: f"oli_{uuid.uuid4().hex[:16]}",
     )
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
     last_birth_profile_change_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -56,6 +57,30 @@ class UserModel(Base):
     )
     daily_readings: Mapped[list["DailyReadingModel"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class AccountTokenModel(Base):
+    __tablename__ = "account_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('verify_email', 'reset_password')",
+            name="ck_account_token_purpose",
+        ),
+        Index("ix_account_tokens_user_purpose", "user_id", "purpose"),
+        Index("ix_account_tokens_expires_at", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    purpose: Mapped[str] = mapped_column(String(30), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
     )
 
 

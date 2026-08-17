@@ -107,6 +107,8 @@ import com.olimora.app.data.CompatibilityResult
 import com.olimora.app.data.SessionStore
 import com.olimora.app.data.authenticate
 import com.olimora.app.data.changePassword
+import com.olimora.app.data.requestPasswordReset
+import com.olimora.app.data.requestEmailVerification
 import com.olimora.app.data.fetchSavedBirthProfile
 import com.olimora.app.data.loadCountries
 import com.olimora.app.data.saveBirthProfile
@@ -827,7 +829,7 @@ private fun OlimoraOnboardingDialog(step: Int, onNext: () -> Unit, onSkip: () ->
         },
         confirmButton = {
             Button(onClick = onNext, colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)) {
-                Text(if (step == 2) "Olimora’yı keşfet" else "Devam")
+                Text(if (step == 3) "Olimora’yı keşfet" else "Devam")
             }
         },
         dismissButton = { TextButton(onClick = onSkip) { Text("Atla") } },
@@ -847,6 +849,7 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
     var termsAccepted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showPasswordReset by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -991,12 +994,24 @@ private fun AccountScreen(onAuthenticated: (AccountSession) -> Unit) {
         ) {
             Text(if (registerMode) "Zaten hesabın var mı? Giriş yap" else "Hesabın yok mu? Kayıt ol")
         }
+        if (!registerMode) {
+            TextButton(
+                onClick = { showPasswordReset = true },
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) { Text("Şifremi unuttum") }
+        }
         Text(
             text = "Şifren tek yönlü olarak korunur ve açık biçimde saklanmaz.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+    }
+    if (showPasswordReset) {
+        PasswordResetRequestDialog(
+            initialEmail = email,
+            onDismiss = { showPasswordReset = false },
         )
     }
 }
@@ -2456,6 +2471,7 @@ private fun SettingsScreen(
     var showAiInfo by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showChangePassword by remember { mutableStateOf(false) }
+    var verificationSending by remember { mutableStateOf(false) }
     var showProductFeedback by remember { mutableStateOf(false) }
     var feedbackCategory by remember { mutableStateOf("idea") }
     var feedbackRating by remember { mutableStateOf(5) }
@@ -2621,6 +2637,34 @@ private fun SettingsScreen(
             description = "Mevcut şifreni doğrula ve hesabın için yeni bir şifre belirle",
             onClick = { showChangePassword = true },
         )
+        SettingsAction(
+            title = "E-posta adresimi doğrula",
+            description = "Hesap kurtarma ve güvenlik için doğrulama bağlantısı gönder",
+            onClick = {
+                val currentToken = token ?: return@SettingsAction
+                verificationSending = true
+                coroutineScope.launch {
+                    runCatching { requestEmailVerification(currentToken) }
+                        .onSuccess {
+                            settingsMessage = "Doğrulama bağlantısı e-posta adresine gönderildi."
+                            settingsMessageIsError = false
+                        }
+                        .onFailure {
+                            settingsMessage = it.message ?: "Doğrulama bağlantısı gönderilemedi."
+                            settingsMessageIsError = true
+                        }
+                    verificationSending = false
+                }
+            },
+        )
+        if (verificationSending) {
+            Text(
+                "Doğrulama bağlantısı hazırlanıyor…",
+                modifier = Modifier.padding(bottom = 10.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         SettingsAction(
             title = if (betaPremiumEnabled) "Beta Premium · Açık" else "Beta Premium'u dene",
             description = if (betaPremiumEnabled) {
@@ -2831,6 +2875,74 @@ private fun StatusNotice(
             }
         }
     }
+}
+
+@Composable
+private fun PasswordResetRequestDialog(
+    initialEmail: String,
+    onDismiss: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var email by remember { mutableStateOf(initialEmail) }
+    var sending by remember { mutableStateOf(false) }
+    var sent by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text("Şifreni yenile") },
+        text = {
+            Column {
+                Text(
+                    if (sent) {
+                        "Bu adres Olimora'da kayıtlıysa şifre yenileme bağlantısı gönderildi. Gelen kutunu ve spam klasörünü kontrol et."
+                    } else {
+                        "Hesabındaki e-posta adresini yaz. Güvenlik nedeniyle hesabın kayıtlı olup olmadığını açıklamayız."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!sent) {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it.trim().lowercase(); errorMessage = null },
+                        label = { Text("E-posta") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    )
+                }
+                errorMessage?.let {
+                    Text(
+                        it,
+                        modifier = Modifier.padding(top = 10.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (sent) {
+                Button(onClick = onDismiss) { Text("Tamam") }
+            } else {
+                Button(
+                    enabled = email.contains("@") && !sending,
+                    onClick = {
+                        sending = true
+                        coroutineScope.launch {
+                            runCatching { requestPasswordReset(email) }
+                                .onSuccess { sent = true }
+                                .onFailure { errorMessage = it.message ?: "İstek gönderilemedi." }
+                            sending = false
+                        }
+                    },
+                ) { Text(if (sending) "Gönderiliyor…" else "Bağlantı gönder") }
+            }
+        },
+        dismissButton = {
+            if (!sent) TextButton(onClick = onDismiss, enabled = !sending) { Text("Vazgeç") }
+        },
+        shape = RoundedCornerShape(22.dp),
+    )
 }
 
 @Composable

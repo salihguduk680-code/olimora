@@ -201,6 +201,25 @@ suspend fun changePassword(token: String, currentPassword: String, newPassword: 
         )
     }
 
+suspend fun requestPasswordReset(email: String) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/auth/request-password-reset",
+        "POST",
+        JSONObject().put("email", email.trim().lowercase()),
+    )
+    Unit
+}
+
+suspend fun requestEmailVerification(token: String) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/auth/request-email-verification",
+        "POST",
+        JSONObject(),
+        token,
+    )
+    Unit
+}
+
 suspend fun fetchSavedBirthProfile(token: String): SavedBirthProfile? = withContext(Dispatchers.IO) {
     try {
         val response = requestJson("$API_BASE/me/birth-profile", "GET", token = token)

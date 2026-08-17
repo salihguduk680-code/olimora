@@ -1,5 +1,13 @@
 # Değişiklik günlüğü
 
+## 0.16.0-beta.1 — geliştirme aşamasında
+
+- Süresi sınırlı, tek kullanımlık bağlantılarla e-posta doğrulama altyapısı eklendi.
+- Giriş ekranına kullanıcı varlığını ifşa etmeyen “Şifremi unuttum” akışı eklendi.
+- Şifre yenileme ve doğrulama anahtarlarının yalnızca geri çevrilemeyen özeti saklanıyor.
+- SMTP bilgileri kaynak koda girmeden ortam değişkenleriyle yapılandırılabiliyor.
+- Ayarlar ekranına e-posta doğrulama bağlantısı isteme işlemi eklendi.
+
 ## 0.15.0-beta.1 — geliştirme aşamasında
 
 - Kullanıcılar Ayarlar içinden mevcut şifrelerini doğrulayarak güvenli biçimde yeni şifre belirleyebiliyor.

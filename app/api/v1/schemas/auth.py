@@ -42,10 +42,37 @@ class PasswordChangeRequest(BaseModel):
         return value
 
 
+class EmailRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+    @field_validator("email")
+    @classmethod
+    def validate_request_email(cls, value: str) -> str:
+        return CredentialsRequest.validate_email(value)
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class PasswordResetRequest(TokenRequest):
+    new_password: str = Field(min_length=10, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_reset_password(cls, value: str) -> str:
+        return PasswordChangeRequest.validate_new_password(value)
+
+
+class ActionResponse(BaseModel):
+    status: str
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     created_at: datetime
+    email_verified: bool = False
 
 
 class AuthResponse(BaseModel):

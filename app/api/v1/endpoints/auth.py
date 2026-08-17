@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -22,13 +23,14 @@ from app.api.v1.schemas.auth import (
 )
 from app.core.config import get_settings
 from app.core.database import get_database_session
-from app.core.mailer import mail_configured, send_account_email
+from app.core.mailer import mail_configured, missing_mail_settings, send_account_email
 from app.core.rate_limit import AttemptLimiter
 from app.core.security import create_access_token, hash_password, verify_password
 from app.modules.astrology.infrastructure.models import AccountTokenModel, UserModel
 
 router = APIRouter(prefix="/auth")
 _auth_limiter = AttemptLimiter()
+logger = logging.getLogger(__name__)
 
 
 def _attempt_key(kind: str, email: str, request: Request) -> str:
@@ -83,9 +85,13 @@ def _schedule_email(
     email: str,
     subject: str,
     path: str,
-) -> None:
+) -> bool:
     if not mail_configured():
-        return
+        logger.warning(
+            "Account email was not scheduled; missing SMTP settings: %s",
+            ", ".join(missing_mail_settings()),
+        )
+        return False
     url = f"{get_settings().public_base_url.rstrip('/')}{path}"
     background_tasks.add_task(
         send_account_email,
@@ -96,6 +102,8 @@ def _schedule_email(
             "Bu isteği sen yapmadıysan e-postayı yok sayabilirsin."
         ),
     )
+    logger.info("Account email scheduled")
+    return True
 
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
@@ -179,19 +187,22 @@ async def request_password_reset(
     key = _attempt_key("password-reset", request.email, http_request)
     if not _auth_limiter.consume(key, limit=5, window_seconds=60 * 60):
         return ActionResponse(status="accepted")
+    normalized_email = request.email.strip().lower()
     user = (
-        await session.execute(select(UserModel).where(UserModel.email == request.email))
+        await session.execute(select(UserModel).where(UserModel.email == normalized_email))
     ).scalar_one_or_none()
-    if user is not None and mail_configured():
+    logger.info("Password reset account lookup completed; account_found=%s", user is not None)
+    if user is not None:
         raw_token = await _issue_account_token(
             session, user, "reset_password", timedelta(minutes=30)
         )
-        _schedule_email(
+        scheduled = _schedule_email(
             background_tasks,
             user.email,
             "Olimora şifre yenileme",
             f"/reset-password?token={raw_token}",
         )
+        logger.info("Password reset email scheduling completed; scheduled=%s", scheduled)
     return ActionResponse(status="accepted")
 
 

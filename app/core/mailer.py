@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import smtplib
 from email.message import EmailMessage
 
@@ -8,6 +9,23 @@ import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+_EMAIL_PATTERN = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
+
+
+def _safe_brevo_error(response: httpx.Response) -> tuple[str, str]:
+    """Return a bounded Brevo error code/message without personal data."""
+    error_code = "unknown"
+    error_message = "no details"
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            error_code = str(payload.get("code") or error_code)[:80]
+            error_message = str(payload.get("message") or error_message)
+    except (TypeError, ValueError):
+        pass
+    error_message = _EMAIL_PATTERN.sub("[email-redacted]", error_message)[:300]
+    return error_code, error_message
 
 
 def missing_mail_settings() -> tuple[str, ...]:
@@ -67,6 +85,15 @@ async def send_account_email(to_email: str, subject: str, body: str) -> bool:
                     },
                 )
                 response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            error_code, error_message = _safe_brevo_error(exc.response)
+            logger.error(
+                "Account email HTTPS delivery rejected (status=%s, code=%s, message=%s)",
+                exc.response.status_code,
+                error_code,
+                error_message,
+            )
+            return False
         except Exception as exc:
             # Some HTTP client errors include request headers in their message.
             # Never log the exception text or traceback because those headers may

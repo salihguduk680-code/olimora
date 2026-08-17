@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.core import mailer
@@ -96,3 +97,49 @@ async def test_brevo_key_is_trimmed_and_never_logged_on_failure(monkeypatch, cap
     assert captured_headers["api-key"] == secret
     assert secret not in caplog.text
     assert "RuntimeError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_brevo_http_error_logs_safe_diagnostics(monkeypatch, caplog) -> None:
+    secret = "api-secret-value"
+    settings = SimpleNamespace(
+        smtp_host=None,
+        smtp_port=587,
+        smtp_starttls=True,
+        smtp_from_email="verified-sender@example.com",
+        smtp_username=None,
+        smtp_password=None,
+        brevo_api_key=secret,
+    )
+
+    class RejectedClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            return None
+
+        async def post(self, url, **_kwargs):
+            request = httpx.Request("POST", url)
+            response = httpx.Response(
+                400,
+                request=request,
+                json={
+                    "code": "invalid_parameter",
+                    "message": "Sender verified-sender@example.com is invalid",
+                },
+            )
+            response.raise_for_status()
+
+    monkeypatch.setattr(mailer, "get_settings", lambda: settings)
+    monkeypatch.setattr(mailer.httpx, "AsyncClient", RejectedClient)
+
+    assert await mailer.send_account_email("person@example.com", "Subject", "Body") is False
+    assert "status=400" in caplog.text
+    assert "code=invalid_parameter" in caplog.text
+    assert "[email-redacted]" in caplog.text
+    assert "verified-sender@example.com" not in caplog.text
+    assert secret not in caplog.text

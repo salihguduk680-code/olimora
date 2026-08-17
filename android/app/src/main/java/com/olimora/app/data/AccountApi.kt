@@ -10,6 +10,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -186,6 +187,18 @@ suspend fun authenticate(email: String, password: String, register: Boolean): Ac
             JSONObject().put("email", email.trim()).put("password", password),
         )
         AccountSession(response.getString("access_token"), response.getJSONObject("user").getString("email"))
+    }
+
+suspend fun changePassword(token: String, currentPassword: String, newPassword: String) =
+    withContext(Dispatchers.IO) {
+        requestNoContent(
+            "$API_BASE/auth/change-password",
+            "POST",
+            token,
+            JSONObject()
+                .put("current_password", currentPassword)
+                .put("new_password", newPassword),
+        )
     }
 
 suspend fun fetchSavedBirthProfile(token: String): SavedBirthProfile? = withContext(Dispatchers.IO) {
@@ -409,6 +422,24 @@ suspend fun submitAthenaFeedback(
     Unit
 }
 
+suspend fun submitProductFeedback(
+    token: String,
+    category: String,
+    rating: Int,
+    details: String,
+) = withContext(Dispatchers.IO) {
+    requestJson(
+        "$API_BASE/moderation/product-feedback",
+        "POST",
+        JSONObject()
+            .put("category", category)
+            .put("rating", rating)
+            .put("details", details.trim()),
+        token,
+    )
+    Unit
+}
+
 suspend fun fetchCompatibility(token: String, friendId: String): CompatibilityResult =
     withContext(Dispatchers.IO) {
         val response = requestJson("$API_BASE/social/compatibility/$friendId", "GET", token = token)
@@ -503,8 +534,8 @@ private fun requestJsonArray(
     token: String? = null,
 ): JSONArray = JSONArray(requestText(url, method, body, token))
 
-private fun requestNoContent(url: String, method: String, token: String) {
-    requestText(url, method, token = token)
+private fun requestNoContent(url: String, method: String, token: String, body: JSONObject? = null) {
+    requestText(url, method, body = body, token = token)
 }
 
 private fun requestText(
@@ -536,6 +567,11 @@ private fun requestText(
             throw ApiException(code, detail?.takeIf { it.isNotBlank() } ?: "Sunucu $code hatası verdi.")
         }
         text.ifBlank { "{}" }
+    } catch (error: IOException) {
+        throw IllegalStateException(
+            "İnternet bağlantısı kurulamadı. Bağlantını kontrol edip tekrar dene.",
+            error,
+        )
     } finally {
         connection.disconnect()
     }

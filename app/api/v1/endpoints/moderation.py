@@ -10,6 +10,7 @@ from app.api.auth_dependencies import get_current_user
 from app.api.v1.schemas.moderation import (
     AthenaFeedbackCreate,
     ModerationActionResponse,
+    ProductFeedbackCreate,
     UserReportCreate,
 )
 from app.core.database import get_database_session
@@ -17,6 +18,7 @@ from app.modules.astrology.infrastructure.models import (
     ContentFeedbackModel,
     DirectMessageModel,
     FriendshipModel,
+    ProductFeedbackModel,
     UserBlockModel,
     UserModel,
     UserReportModel,
@@ -120,6 +122,32 @@ async def submit_athena_feedback(
             user_id=user.id,
             content_type=request.content_type,
             reason=request.reason,
+            details=request.details,
+        )
+    )
+    await session.commit()
+    return ModerationActionResponse(status="received")
+
+
+@router.post("/product-feedback", response_model=ModerationActionResponse, status_code=201)
+async def submit_product_feedback(
+    request: ProductFeedbackCreate,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> ModerationActionResponse:
+    recent = await session.scalar(
+        select(func.count(ProductFeedbackModel.id)).where(
+            ProductFeedbackModel.user_id == user.id,
+            ProductFeedbackModel.created_at >= datetime.now(UTC) - timedelta(days=1),
+        )
+    ) or 0
+    if recent >= 5:
+        raise HTTPException(status_code=429, detail="Bugün yeterince geri bildirim gönderdin.")
+    session.add(
+        ProductFeedbackModel(
+            user_id=user.id,
+            category=request.category,
+            rating=request.rating,
             details=request.details,
         )
     )

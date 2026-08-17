@@ -28,5 +28,16 @@ class AthenaFeedbackCreate(BaseModel):
         return cleaned or None
 
 
+class ProductFeedbackCreate(BaseModel):
+    category: str = Field(pattern=r"^(idea|bug|experience)$")
+    rating: int = Field(ge=1, le=5)
+    details: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("details")
+    @classmethod
+    def clean_product_details(cls, value: str) -> str:
+        return value.strip()
+
+
 class ModerationActionResponse(BaseModel):
     status: str

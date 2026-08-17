@@ -65,6 +65,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -105,6 +106,7 @@ import com.olimora.app.data.CountryLocation
 import com.olimora.app.data.CompatibilityResult
 import com.olimora.app.data.SessionStore
 import com.olimora.app.data.authenticate
+import com.olimora.app.data.changePassword
 import com.olimora.app.data.fetchSavedBirthProfile
 import com.olimora.app.data.loadCountries
 import com.olimora.app.data.saveBirthProfile
@@ -143,6 +145,7 @@ import com.olimora.app.data.sendFriendRequest
 import com.olimora.app.data.reportUser
 import com.olimora.app.data.blockUser
 import com.olimora.app.data.submitAthenaFeedback
+import com.olimora.app.data.submitProductFeedback
 import com.olimora.app.data.updateSocialStatus
 import com.olimora.app.data.updateSocialDisplayName
 import kotlinx.coroutines.launch
@@ -185,6 +188,8 @@ class MainActivity : ComponentActivity() {
                         onAccountDeleted = {},
                         betaPremiumEnabled = true,
                         onBetaPremiumChange = {},
+                        analyticsEnabled = false,
+                        onAnalyticsChange = {},
                         onBack = {},
                     )
                 } else if (isDebuggable && intent.getBooleanExtra("premium_design_preview", false)) {
@@ -339,6 +344,19 @@ fun OlimoraApp() {
     }
     var betaPremiumEnabled by remember {
         mutableStateOf(experiencePreferences.getBoolean("beta_premium_enabled", false))
+    }
+    var analyticsEnabled by remember {
+        mutableStateOf(experiencePreferences.getBoolean("analytics_enabled", false))
+    }
+
+    LaunchedEffect(analyticsEnabled) {
+        ProductAnalytics.setEnabled(context, analyticsEnabled)
+    }
+
+    LaunchedEffect(screen, chartResult, analyticsEnabled) {
+        if (screen == OlimoraScreen.ChartResult && chartResult != null) {
+            ProductAnalytics.event(context, "chart_viewed", analyticsEnabled)
+        }
     }
 
     LaunchedEffect(authToken) {
@@ -647,6 +665,7 @@ fun OlimoraApp() {
                             dailySignReadingError = dailySignReadingError,
                             onRequestDailySignReading = {
                                 authToken?.let { token ->
+                                    ProductAnalytics.event(context, "daily_sign_requested", analyticsEnabled)
                                     dailySignReadingLoading = true
                                     dailySignReadingError = null
                                     coroutineScope.launch {
@@ -674,6 +693,7 @@ fun OlimoraApp() {
                             premiumDailyReadingError = premiumDailyReadingError,
                             onRequestPremiumDailyReading = {
                                 authToken?.let { token ->
+                                    ProductAnalytics.event(context, "premium_reading_requested", analyticsEnabled)
                                     premiumDailyReadingLoading = true
                                     premiumDailyReadingError = null
                                     coroutineScope.launch {
@@ -696,6 +716,7 @@ fun OlimoraApp() {
                                 SocialScreen(
                                     token = token,
                                     betaPremiumEnabled = betaPremiumEnabled,
+                                    analyticsEnabled = analyticsEnabled,
                                     onConversationChanged = { isConversationOpen = it },
                                 )
                             }
@@ -733,6 +754,11 @@ fun OlimoraApp() {
                         premiumDailyReadingError = null
                     }
                 },
+                analyticsEnabled = analyticsEnabled,
+                onAnalyticsChange = { enabled ->
+                    analyticsEnabled = enabled
+                    experiencePreferences.edit().putBoolean("analytics_enabled", enabled).apply()
+                },
                 onBack = {
                     screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
                 },
@@ -747,7 +773,7 @@ fun OlimoraApp() {
         OlimoraOnboardingDialog(
             step = onboardingStep,
             onNext = {
-                if (onboardingStep < 2) {
+                if (onboardingStep < 3) {
                     onboardingStep += 1
                 } else {
                     experiencePreferences.edit().putBoolean("intro_seen", true).apply()
@@ -768,6 +794,7 @@ private fun OlimoraOnboardingDialog(step: Int, onNext: () -> Unit, onSkip: () ->
         Triple("✦", "Haritan hep seninle", "Doğum bilgilerin hesabında saklanır. Güneş, Ay ve yükselen sonuçlarına yeniden bilgi girmeden ulaşabilirsin."),
         Triple("☾", "Her gün yeni bir gökyüzü", "Günlük yorumun yalnızca istediğinde hazırlanır. Kalıcı harita özetiyle günlük yorumu artık kolayca ayırt edebilirsin."),
         Triple("☺", "Arkadaşların bir kaydırma uzakta", "Harita ekranını sola kaydırarak arkadaşlarına, mesajlarına ve yeni isteklerine geçebilirsin."),
+        Triple("✦", "Davet et, birlikte keşfet", "Arkadaşlar ekranındaki Davet et düğmesi Olimora kodunu ve kalıcı indirme bağlantısını tek dokunuşla paylaşır."),
     )
     val page = pages[step.coerceIn(pages.indices)]
     AlertDialog(
@@ -786,7 +813,7 @@ private fun OlimoraOnboardingDialog(step: Int, onNext: () -> Unit, onSkip: () ->
                     modifier = Modifier.padding(top = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    repeat(3) { index ->
+                    repeat(4) { index ->
                         Box(
                             Modifier.size(if (index == step) 20.dp else 7.dp, 7.dp)
                                 .background(
@@ -1598,6 +1625,12 @@ private fun ChartResultScreen(
     var readingHistory by remember { mutableStateOf<List<DailyReading>>(emptyList()) }
     var historyLoading by remember { mutableStateOf(false) }
     var selectedHistoryReading by remember { mutableStateOf<DailyReading?>(null) }
+    var showOlimoraShare by remember { mutableStateOf(false) }
+    var shareOverview by remember { mutableStateOf<SocialOverview?>(null) }
+    var shareGroups by remember { mutableStateOf<List<SocialGroup>>(emptyList()) }
+    var shareLoading by remember { mutableStateOf(false) }
+    var shareSendingTarget by remember { mutableStateOf<String?>(null) }
+    var shareStatus by remember { mutableStateOf<String?>(null) }
     val now = remember { Calendar.getInstance() }
     val greeting = when (now.get(Calendar.HOUR_OF_DAY)) {
         in 5..11 -> "Günaydın"
@@ -1808,7 +1841,17 @@ private fun ChartResultScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(50.dp),
                 shape = RoundedCornerShape(14.dp),
             ) {
-                Text("✦  Yorumumu paylaş")
+                Text("✦  Diğer uygulamalarda paylaş")
+            }
+            if (authToken != null) {
+                Button(
+                    onClick = { showOlimoraShare = true },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                ) {
+                    Text("Olimora'da arkadaşlarımla paylaş")
+                }
             }
         }
 
@@ -1820,7 +1863,7 @@ private fun ChartResultScreen(
             onRequestReading = onRequestPremiumDailyReading,
         )
         ReadingHistoryPreview(
-            todayReady = dailySignReading != null,
+            todayReading = premiumDailyReading,
             history = readingHistory,
             loading = historyLoading,
             onLoad = {
@@ -1832,6 +1875,7 @@ private fun ChartResultScreen(
                     historyLoading = false
                 }
             },
+            onRequestToday = onRequestPremiumDailyReading,
             onSelect = { selectedHistoryReading = it },
         )
 
@@ -1886,6 +1930,107 @@ private fun ChartResultScreen(
             shape = RoundedCornerShape(22.dp),
         )
     }
+    if (showOlimoraShare && dailySignReading != null && authToken != null) {
+        LaunchedEffect(showOlimoraShare) {
+            if (shareOverview == null && !shareLoading) {
+                shareLoading = true
+                runCatching {
+                    fetchSocialOverview(authToken) to fetchGroups(authToken)
+                }.onSuccess { (overview, groups) ->
+                    shareOverview = overview
+                    shareGroups = groups
+                }.onFailure {
+                    shareStatus = it.message ?: "Paylaşım listesi yüklenemedi."
+                }
+                shareLoading = false
+            }
+        }
+        val inAppShareText = buildDailyReadingShareText(
+            name = name,
+            sign = signName(chartResult.sunSign),
+            reading = dailySignReading,
+        )
+        AlertDialog(
+            onDismissRequest = { if (shareSendingTarget == null) showOlimoraShare = false },
+            title = { Text("Olimora'da paylaş") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Günlük yorumunu bir sohbete gönder. Karşı taraf yalnızca bu paylaşım metnini görür.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (shareLoading) {
+                        Text("Arkadaşların yükleniyor…", modifier = Modifier.padding(top = 18.dp))
+                    }
+                    shareStatus?.let {
+                        StatusNotice(
+                            it,
+                            it.contains("yüklenemedi") || it.contains("gönderilemedi"),
+                            Modifier.padding(top = 10.dp),
+                        )
+                    }
+                    shareOverview?.friends.orEmpty().takeIf { it.isNotEmpty() }?.let { friends ->
+                        SocialSectionTitle("Arkadaşlar")
+                        friends.forEach { friend ->
+                            InAppShareTarget(
+                                symbol = friend.displayName.take(1).uppercase(),
+                                title = friend.displayName,
+                                subtitle = "Özel sohbet",
+                                sending = shareSendingTarget == "friend:${friend.id}",
+                                enabled = shareSendingTarget == null,
+                                onClick = {
+                                    shareSendingTarget = "friend:${friend.id}"
+                                    shareStatus = null
+                                    coroutineScope.launch {
+                                        runCatching { sendDirectMessage(authToken, friend.id, inAppShareText) }
+                                            .onSuccess { shareStatus = "${friend.displayName} ile paylaşıldı." }
+                                            .onFailure { shareStatus = it.message ?: "Yorum gönderilemedi." }
+                                        shareSendingTarget = null
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    shareGroups.takeIf { it.isNotEmpty() }?.let { groups ->
+                        SocialSectionTitle("Gruplar")
+                        groups.forEach { group ->
+                            InAppShareTarget(
+                                symbol = "✦",
+                                title = group.name,
+                                subtitle = "${group.members.size} üyeli grup",
+                                sending = shareSendingTarget == "group:${group.id}",
+                                enabled = shareSendingTarget == null,
+                                onClick = {
+                                    shareSendingTarget = "group:${group.id}"
+                                    shareStatus = null
+                                    coroutineScope.launch {
+                                        runCatching { sendGroupMessage(authToken, group.id, inAppShareText) }
+                                            .onSuccess { shareStatus = "${group.name} grubunda paylaşıldı." }
+                                            .onFailure { shareStatus = it.message ?: "Yorum gönderilemedi." }
+                                        shareSendingTarget = null
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    if (!shareLoading && shareOverview?.friends.orEmpty().isEmpty() && shareGroups.isEmpty()) {
+                        Text(
+                            "Paylaşmak için önce bir arkadaş ekleyebilir veya grup kurabilirsin.",
+                            modifier = Modifier.padding(top = 18.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showOlimoraShare = false }, enabled = shareSendingTarget == null) {
+                    Text("Kapat")
+                }
+            },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
 }
 
 private fun shareDailySignReading(
@@ -1894,7 +2039,20 @@ private fun shareDailySignReading(
     sign: String,
     reading: DailySignReading,
 ) {
-    val shareText = buildString {
+    val shareText = buildDailyReadingShareText(name, sign, reading)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "Olimora günlük yorumum")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(intent, "Olimora yorumunu paylaş"))
+}
+
+private fun buildDailyReadingShareText(
+    name: String,
+    sign: String,
+    reading: DailySignReading,
+): String = buildString {
         append("✦ OLIMORA · ")
         append(sign.uppercase(Locale.forLanguageTag("tr-TR")))
         append("\n\n")
@@ -1905,12 +2063,37 @@ private fun shareDailySignReading(
         append(reading.relationships)
         append("\n\nAstrolojik yorumlar eğlence ve öz farkındalık amaçlıdır.")
     }
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "Olimora günlük yorumum")
-        putExtra(Intent.EXTRA_TEXT, shareText)
+
+@Composable
+private fun InAppShareTarget(
+    symbol: String,
+    title: String,
+    subtitle: String,
+    sending: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(38.dp).background(PrimaryPurple.copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(symbol, color = PrimaryPurple, fontWeight = FontWeight.Bold) }
+        Column(Modifier.weight(1f).padding(start = 11.dp)) {
+            Text(title, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                if (sending) "Gönderiliyor…" else subtitle,
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text("›", color = PrimaryPurple, fontSize = 20.sp)
     }
-    context.startActivity(Intent.createChooser(intent, "Olimora yorumunu paylaş"))
 }
 
 @Composable
@@ -2080,16 +2263,24 @@ private fun PremiumBenefit(text: String) {
 
 @Composable
 private fun ReadingHistoryPreview(
-    todayReady: Boolean,
+    todayReading: DailyReading?,
     history: List<DailyReading>,
     loading: Boolean,
     onLoad: () -> Unit,
+    onRequestToday: () -> Unit,
     onSelect: (DailyReading) -> Unit,
 ) {
     var archiveExpanded by remember { mutableStateOf(false) }
+    var initialLoadRequested by remember { mutableStateOf(false) }
     val days = remember {
         List(7) { offset ->
             Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset - 6) }
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (!initialLoadRequested) {
+            initialLoadRequested = true
+            onLoad()
         }
     }
     Text(
@@ -2111,9 +2302,13 @@ private fun ReadingHistoryPreview(
             val isToday = index == days.lastIndex
             val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(day.time)
             val readingForDay = history.firstOrNull { it.date == dateKey }
+                ?: todayReading?.takeIf { isToday && it.date == dateKey }
             Card(
-                onClick = { readingForDay?.let(onSelect) },
-                enabled = readingForDay != null,
+                onClick = {
+                    if (readingForDay != null) onSelect(readingForDay)
+                    else if (isToday) onRequestToday()
+                },
+                enabled = readingForDay != null || isToday,
                 colors = CardDefaults.cardColors(
                     containerColor = if (readingForDay != null) PrimaryPurple.copy(alpha = 0.12f)
                     else MaterialTheme.colorScheme.surface
@@ -2134,9 +2329,8 @@ private fun ReadingHistoryPreview(
                     Text(
                         when {
                             readingForDay != null -> "Aç"
-                            isToday && todayReady -> "Hazır"
-                            isToday -> "Bugün"
-                            else -> "Kilitli"
+                            isToday -> "Oluştur"
+                            else -> "Yok"
                         },
                         color = if (readingForDay != null || isToday) PrimaryPurple
                         else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2148,7 +2342,7 @@ private fun ReadingHistoryPreview(
     }
     OutlinedButton(
         onClick = {
-            if (history.isEmpty()) onLoad()
+            if (history.isEmpty() && !loading) onLoad()
             archiveExpanded = !archiveExpanded
         },
         enabled = !loading,
@@ -2159,7 +2353,7 @@ private fun ReadingHistoryPreview(
             when {
                 loading -> "Arşiv yükleniyor…"
                 archiveExpanded -> "Yorum arşivini gizle"
-                else -> "Yorum arşivimi aç"
+                else -> "Tüm yorum geçmişini göster"
             }
         )
     }
@@ -2171,7 +2365,7 @@ private fun ReadingHistoryPreview(
             style = MaterialTheme.typography.bodySmall,
         )
     }
-    if (archiveExpanded) history.take(7).forEach { reading ->
+    if (archiveExpanded) history.take(31).forEach { reading ->
         Card(
             onClick = { onSelect(reading) },
             modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
@@ -2249,6 +2443,8 @@ private fun SettingsScreen(
     onAccountDeleted: () -> Unit,
     betaPremiumEnabled: Boolean,
     onBetaPremiumChange: (Boolean) -> Unit,
+    analyticsEnabled: Boolean,
+    onAnalyticsChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -2259,6 +2455,12 @@ private fun SettingsScreen(
     var displayNameUpdating by remember { mutableStateOf(false) }
     var showAiInfo by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showChangePassword by remember { mutableStateOf(false) }
+    var showProductFeedback by remember { mutableStateOf(false) }
+    var feedbackCategory by remember { mutableStateOf("idea") }
+    var feedbackRating by remember { mutableStateOf(5) }
+    var feedbackDetails by remember { mutableStateOf("") }
+    var feedbackSending by remember { mutableStateOf(false) }
     var deletingAccount by remember { mutableStateOf(false) }
     var settingsMessage by remember { mutableStateOf<String?>(null) }
     var settingsMessageIsError by remember { mutableStateOf(false) }
@@ -2402,11 +2604,22 @@ private fun SettingsScreen(
             title = "Bildirimler",
             description = "Yeni arkadaş mesajları için cihaz izinlerini yönet",
             onClick = {
-                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    }
+                } else {
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
                 }
                 context.startActivity(intent)
             },
+        )
+        SettingsAction(
+            title = "Şifremi değiştir",
+            description = "Mevcut şifreni doğrula ve hesabın için yeni bir şifre belirle",
+            onClick = { showChangePassword = true },
         )
         SettingsAction(
             title = if (betaPremiumEnabled) "Beta Premium · Açık" else "Beta Premium'u dene",
@@ -2422,6 +2635,33 @@ private fun SettingsScreen(
             title = "AI nasıl kullanılıyor?",
             description = "Athena’nın hangi verileri yorumladığını açıkça gör",
             onClick = { showAiInfo = true },
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Anonim kullanım analitiği", fontWeight = FontWeight.Medium)
+                    Text(
+                        "Kişisel veri toplamadan hangi özelliklerin işe yaradığını anlamamıza yardım et",
+                        modifier = Modifier.padding(top = 3.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = analyticsEnabled, onCheckedChange = onAnalyticsChange)
+            }
+        }
+        SettingsAction(
+            title = "Fikrini paylaş",
+            description = "Bir öneri, hata veya deneyim notunu doğrudan ekibe gönder",
+            onClick = { showProductFeedback = true },
         )
         SettingsAction(
             title = "Hakkında ve destek",
@@ -2448,6 +2688,85 @@ private fun SettingsScreen(
                 Text("Athena; doğum tarihi, saat, konum ve astroloji motorunun ürettiği matematiksel yerleşimleri yorumlar. Arkadaş mesajların ve paylaştığın fotoğraflar AI yorumuna gönderilmez.")
             },
             confirmButton = { TextButton(onClick = { showAiInfo = false }) { Text("Anladım") } },
+            shape = RoundedCornerShape(22.dp),
+        )
+    }
+    if (showChangePassword) {
+        ChangePasswordDialog(
+            token = token,
+            onDismiss = { showChangePassword = false },
+            onSuccess = {
+                showChangePassword = false
+                settingsMessage = "Şifren güvenle güncellendi."
+                settingsMessageIsError = false
+            },
+        )
+    }
+    if (showProductFeedback) {
+        AlertDialog(
+            onDismissRequest = { if (!feedbackSending) showProductFeedback = false },
+            title = { Text("Olimora'yı birlikte geliştirelim") },
+            text = {
+                Column {
+                    SelectionField(
+                        label = "Konu",
+                        value = when (feedbackCategory) {
+                            "bug" -> "Bir hata buldum"
+                            "experience" -> "Deneyimimi paylaşacağım"
+                            else -> "Bir fikrim var"
+                        },
+                        options = listOf("Bir fikrim var", "Bir hata buldum", "Deneyimimi paylaşacağım"),
+                        onSelected = {
+                            feedbackCategory = when (it) {
+                                "Bir hata buldum" -> "bug"
+                                "Deneyimimi paylaşacağım" -> "experience"
+                                else -> "idea"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("Puanın", modifier = Modifier.padding(top = 14.dp), fontWeight = FontWeight.Medium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        (1..5).forEach { rating ->
+                            TextButton(onClick = { feedbackRating = rating }) {
+                                Text(if (rating <= feedbackRating) "★" else "☆", color = Gold, fontSize = 24.sp)
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = feedbackDetails,
+                        onValueChange = { feedbackDetails = it.take(1000) },
+                        label = { Text("Bize anlat") },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !feedbackSending && feedbackDetails.trim().length >= 10,
+                    onClick = {
+                        val currentToken = token ?: return@Button
+                        feedbackSending = true
+                        coroutineScope.launch {
+                            runCatching {
+                                submitProductFeedback(currentToken, feedbackCategory, feedbackRating, feedbackDetails)
+                            }.onSuccess {
+                                ProductAnalytics.event(context, "feedback_sent", analyticsEnabled)
+                                settingsMessage = "Teşekkürler; geri bildirimin bize ulaştı."
+                                settingsMessageIsError = false
+                                feedbackDetails = ""
+                                showProductFeedback = false
+                            }.onFailure {
+                                settingsMessage = it.message ?: "Geri bildirim gönderilemedi."
+                                settingsMessageIsError = true
+                            }
+                            feedbackSending = false
+                        }
+                    },
+                ) { Text(if (feedbackSending) "Gönderiliyor…" else "Gönder") }
+            },
+            dismissButton = { TextButton(onClick = { showProductFeedback = false }) { Text("Vazgeç") } },
             shape = RoundedCornerShape(22.dp),
         )
     }
@@ -2515,6 +2834,87 @@ private fun StatusNotice(
 }
 
 @Composable
+private fun ChangePasswordDialog(
+    token: String?,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val newPasswordValid = newPassword.length >= 10 &&
+        newPassword.any(Char::isLetter) && newPassword.any(Char::isDigit)
+    val confirmationValid = confirmation.isNotEmpty() && confirmation == newPassword
+
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = { Text("Şifreni değiştir") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = currentPassword,
+                    onValueChange = { currentPassword = it.take(128); errorMessage = null },
+                    label = { Text("Mevcut şifre") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it.take(128); errorMessage = null },
+                    label = { Text("Yeni şifre") },
+                    supportingText = { Text("En az 10 karakter, bir harf ve bir rakam") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { confirmation = it.take(128); errorMessage = null },
+                    label = { Text("Yeni şifre tekrar") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    isError = confirmation.isNotEmpty() && !confirmationValid,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+                errorMessage?.let {
+                    Text(
+                        it,
+                        modifier = Modifier.padding(top = 10.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = token != null && currentPassword.length >= 8 && newPasswordValid &&
+                    confirmationValid && !submitting,
+                onClick = {
+                    val currentToken = token ?: return@Button
+                    submitting = true
+                    coroutineScope.launch {
+                        runCatching { changePassword(currentToken, currentPassword, newPassword) }
+                            .onSuccess { onSuccess() }
+                            .onFailure { errorMessage = it.message ?: "Şifre güncellenemedi." }
+                        submitting = false
+                    }
+                },
+            ) { Text(if (submitting) "Güncelleniyor…" else "Şifreyi güncelle") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !submitting) { Text("Vazgeç") } },
+        shape = RoundedCornerShape(22.dp),
+    )
+}
+
+@Composable
 private fun SettingsAction(
     title: String,
     description: String,
@@ -2544,6 +2944,7 @@ private fun SettingsAction(
 private fun SocialScreen(
     token: String,
     betaPremiumEnabled: Boolean,
+    analyticsEnabled: Boolean,
     onConversationChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -2648,6 +3049,55 @@ private fun SocialScreen(
             modifier = Modifier.padding(top = 6.dp, bottom = 18.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        overview?.me?.let { me ->
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = PrimaryPurple.copy(alpha = 0.10f)),
+                border = BorderStroke(1.dp, PrimaryPurple.copy(alpha = 0.28f)),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Column(Modifier.padding(17.dp)) {
+                    Text("Gökyüzünü birlikte keşfet ✦", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Text(
+                        "Arkadaşını Olimora'ya davet et; ardından ${me.olimoraId} koduyla birbirinizi bulun.",
+                        modifier = Modifier.padding(top = 5.dp, bottom = 11.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Olimora arkadaş kodu", me.olimoraId))
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(13.dp),
+                        ) { Text("Kodu kopyala") }
+                        Button(
+                            onClick = {
+                                val shareText = "${me.displayName} seni Olimora'ya davet ediyor ✦\n" +
+                                    "Arkadaş kodu: ${me.olimoraId}\n" +
+                                    "İndir: https://github.com/salihguduk680-code/olimora/releases/latest"
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, "Olimora daveti")
+                                            putExtra(Intent.EXTRA_TEXT, shareText)
+                                        },
+                                        "Olimora davetini paylaş",
+                                    )
+                                )
+                                ProductAnalytics.event(context, "friend_invite_shared", analyticsEnabled)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(13.dp),
+                        ) { Text("Davet et") }
+                    }
+                }
+            }
+        }
 
         error?.let { message ->
             StatusNotice(
@@ -3322,6 +3772,14 @@ private fun GroupConversationScreen(
                 TextButton(onClick = { showInfo = true }) { Text("Üyeler") }
             }
         }
+        OutlinedButton(
+            onClick = { draft = dailyGroupConversationStarter(group.name) },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            shape = RoundedCornerShape(14.dp),
+            enabled = draft.isBlank() && !sending,
+        ) {
+            Text("✦  Athena'dan bugünün sohbet fikri")
+        }
         PullToRefreshBox(
             isRefreshing = loading,
             onRefresh = { refreshKey += 1 },
@@ -3416,6 +3874,21 @@ private fun GroupConversationScreen(
             confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Kapat") } },
         )
     }
+}
+
+private fun dailyGroupConversationStarter(groupName: String): String {
+    val prompts = listOf(
+        "Bugün enerjinizi tek bir emojiyle anlatsanız hangisi olurdu? ✦",
+        "Bugün gerçekleşmesini istediğiniz küçük bir dilek ne? ✦",
+        "Gününüzün şu ana kadarki en güzel anı neydi? ✦",
+        "Şu an hep birlikte bir yere ışınlansak nereyi seçerdiniz? ✦",
+        "Bugünkü ruh hâlinizi bir şarkıyla anlatsanız hangi şarkı olurdu? ✦",
+        "Bu hafta kendiniz için yaptığınız en iyi şey neydi? ✦",
+        "Grupta bugün kime iyi enerji göndermek istersiniz? ✦",
+    )
+    val day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+    val groupOffset = groupName.lowercase(Locale.ROOT).hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+    return prompts[((day.toLong() + groupOffset) % prompts.size).toInt()]
 }
 
 @Composable

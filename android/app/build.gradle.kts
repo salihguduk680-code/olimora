@@ -26,8 +26,8 @@ android {
         applicationId = "com.olimora.app"
         minSdk = 24
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.12.0-beta.1"
+        versionCode = 16
+        versionName = "0.15.0-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -69,6 +69,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.installations)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.analytics)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

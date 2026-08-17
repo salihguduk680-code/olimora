@@ -14,19 +14,23 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import java.time.Duration
-import java.time.ZonedDateTime
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 private const val DAILY_REMINDER_WORK = "olimora_daily_reminder"
 
 internal fun scheduleDailyOlimoraReminder(context: Context) {
-    val now = ZonedDateTime.now()
-    var nextReminder = now.withHour(12).withMinute(30).withSecond(0).withNano(0)
-    if (!nextReminder.isAfter(now)) nextReminder = nextReminder.plusDays(1)
-    val initialDelay = Duration.between(now, nextReminder)
+    val now = Calendar.getInstance()
+    val nextReminder = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 12)
+        set(Calendar.MINUTE, 30)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        if (!after(now)) add(Calendar.DAY_OF_YEAR, 1)
+    }
+    val initialDelayMillis = (nextReminder.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
     val request = PeriodicWorkRequestBuilder<DailyReminderWorker>(24, TimeUnit.HOURS)
-        .setInitialDelay(initialDelay)
+        .setInitialDelay(initialDelayMillis, TimeUnit.MILLISECONDS)
         .build()
     WorkManager.getInstance(context).enqueueUniquePeriodicWork(
         DAILY_REMINDER_WORK,
@@ -73,7 +77,7 @@ class DailyReminderWorker(
             .setSmallIcon(R.drawable.ic_olimora_notification)
             .setColor(0xFF7B46AD.toInt())
             .setContentTitle("Olimora")
-            .setContentText(messages[ZonedDateTime.now().dayOfYear % messages.size])
+            .setContentText(messages[Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % messages.size])
             .setContentIntent(openAppIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)

@@ -1,5 +1,33 @@
 # Değişiklik günlüğü
 
+## 0.15.0-beta.1 — geliştirme aşamasında
+
+- Kullanıcılar Ayarlar içinden mevcut şifrelerini doğrulayarak güvenli biçimde yeni şifre belirleyebiliyor.
+- Yeni şifre hem istemcide hem sunucuda güç ve uzunluk kurallarıyla doğrulanıyor.
+- Ağ bağlantısı kurulamadığında teknik bağlantı hatası yerine anlaşılır çevrimdışı mesajı gösteriliyor.
+- Play Console mağaza metni, Data Safety çalışma belgesi ve kapalı test planı eklendi.
+
+## 0.14.0-beta.1 — geliştirme aşamasında
+
+- Arkadaş ekranına Olimora kodu ve kalıcı indirme bağlantısı içeren davet merkezi eklendi.
+- Ayarlar'a uygulama içi fikir, hata ve deneyim geri bildirimi eklendi.
+- Geri bildirimler kimliği doğrulanmış ve günlük sınırlandırılmış yeni API ile saklanıyor.
+- Kişisel veri içermeyen Firebase Analytics tamamen isteğe bağlı olarak eklendi; varsayılan olarak kapalıdır.
+- Gizlilik politikası anonim analitik tercihini açıkça anlatacak şekilde güncellendi.
+
+## 0.13.0-beta.1 — geliştirme aşamasında
+
+- Yorum geçmişi uygulamaya girildiğinde otomatik yükleniyor; kayıtlı günler doğrudan açılıyor.
+- Arşivde kaydı olmayan geçmiş günler artık yanıltıcı biçimde “Kilitli” değil, “Yok” olarak gösteriliyor.
+- Bugünün kişisel yorumu gün kartından oluşturulabiliyor ve hazır olduğunda aynı karttan açılıyor.
+- Yorum arşivi 7 kayıt yerine son 31 kaydı gösterecek şekilde genişletildi.
+- Günlük burç yorumu Olimora içinden doğrudan bir arkadaşa veya gruba gönderilebiliyor.
+- Grup sohbetlerine her gün değişen, mesaj kutusuna getirilen Athena sohbet fikirleri eklendi.
+- Android 7 desteğini bozan tarih API’leri giderildi ve mağaza lint denetimi temizlendi.
+- Firebase bildirim kaydı gerçek FCM cihaz anahtarını kullanacak şekilde düzeltildi; anahtar yenilenince sunucu otomatik güncelleniyor.
+
+Bu sürüm henüz GitHub’a veya test kullanıcılarına gönderilmemiş yerel geliştirme sürümüdür.
+
 ## 0.12.0-beta.1 — 2026-08-16
 
 - Yorum arşivi, kayıt bulunan gün kartına dokunarak açılacak şekilde sadeleştirildi.

@@ -381,6 +381,29 @@ class ContentFeedbackModel(Base):
     )
 
 
+class ProductFeedbackModel(Base):
+    __tablename__ = "product_feedback"
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('idea', 'bug', 'experience')",
+            name="ck_product_feedback_category",
+        ),
+        CheckConstraint("rating BETWEEN 1 AND 5", name="ck_product_feedback_rating"),
+        Index("ix_product_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(30), nullable=False)
+    rating: Mapped[int] = mapped_column(nullable=False)
+    details: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class FirebaseInstallationModel(Base):
     __tablename__ = "firebase_installations"
     __table_args__ = (Index("ix_firebase_installations_user_id", "user_id"),)

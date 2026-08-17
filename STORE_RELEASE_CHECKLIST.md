@@ -23,12 +23,15 @@
 - [ ] Railway, Firebase Cloud Messaging ve OpenAI'ı hizmet sağlayıcı olarak beyan et.
 - [ ] İçerik derecelendirmesi, 13+ hedef kitle, reklam içermediği ve astrolojinin eğlence amaçlı olduğu bilgilerini doldur.
 - [ ] Uygulama simgesi, telefon ekran görüntüleri, özellik görseli ve Türkçe kısa/uzun açıklama hazırla.
+- [x] Türkçe kısa/uzun mağaza açıklaması `play-store/STORE_LISTING_TR.md` içinde hazırlandı.
+- [x] Data Safety cevapları için teknik çalışma belgesi hazırlandı.
+- [x] Kapalı test kullanıcı akışı ve yayına geçiş ölçütleri hazırlandı.
 - [ ] AAB üret, Play App Signing'i etkinleştir ve önce kapalı test kanalına yükle.
 - [ ] En az iki farklı fiziksel cihazda kayıt, giriş, hesap silme, bildirim, sohbet, engelleme/bildirme ve koyu tema testini tamamla.
 
 ## Yayın engelleri
 
 1. Kalıcı destek/gizlilik e-postası henüz belirlenmedi.
-2. Parola sıfırlama ve e-posta doğrulama henüz yok; mağaza için mutlak engel değildir fakat genel kullanıma açılmadan önerilir.
+2. Uygulama içi parola değiştirme var; e-posta üzerinden parola sıfırlama ve e-posta doğrulama için gerçek posta sağlayıcısı henüz bağlı değil.
 3. Moderasyon taleplerine kim tarafından ve kaç saat içinde cevap verileceği belirlenmeli.
 4. Uygulamanın koşulları ve gizlilik metni gerçek yayından önce hukuki incelemeden geçirilmeli.

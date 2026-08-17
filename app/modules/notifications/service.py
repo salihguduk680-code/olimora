@@ -57,7 +57,7 @@ class FirebasePushService:
                         visibility="private",
                     ),
                 ),
-                fid=fid,
+                token=fid,
             )
             for fid in fids
         ]

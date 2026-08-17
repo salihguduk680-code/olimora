@@ -9,6 +9,7 @@ from app.api.auth_dependencies import get_current_user
 from app.api.v1.schemas.auth import (
     AuthResponse,
     CredentialsRequest,
+    PasswordChangeRequest,
     RegistrationRequest,
     UserResponse,
 )
@@ -87,6 +88,26 @@ async def login(
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[UserModel, Depends(get_current_user)]) -> UserResponse:
     return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    request: PasswordChangeRequest,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> None:
+    if not verify_password(request.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Mevcut şifren hatalı.",
+        )
+    if verify_password(request.new_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Yeni şifren mevcut şifrenden farklı olmalı.",
+        )
+    user.password_hash = hash_password(request.new_password)
+    await session.commit()
 
 
 @router.delete("/me", status_code=204)

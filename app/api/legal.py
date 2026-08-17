@@ -21,7 +21,7 @@ def _page(title: str, body: str) -> HTMLResponse:
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>{escape(title)} · Olimora</title><style>{_STYLE}</style></head>"
         f"<body><p>✦ OLIMORA</p><h1>{escape(title)}</h1>{body}"
-        f"<p class='muted'>Son güncelleme: 16 Ağustos 2026 · <a href='{_SUPPORT}'>Destek</a></p>"
+        f"<p class='muted'>Son güncelleme: 17 Ağustos 2026 · <a href='{_SUPPORT}'>Destek</a></p>"
         "</body></html>"
     )
 
@@ -34,7 +34,7 @@ async def privacy_policy() -> HTMLResponse:
 <div class='card'><h2>Topladığımız veriler</h2><p>Hesap için e-posta adresi ve parola özeti; harita için ad veya rumuz, doğum tarihi, saat, şehir/ilçe ve bunlardan hesaplanan astrolojik yerleşimler saklanır. Sosyal özellikleri kullanırsan arkadaşlıklar, grup üyelikleri, mesajlar, durum ve bildirim cihaz kimliği saklanır.</p></div>
 <h2>Nasıl kullanıyoruz?</h2><p>Veriler yalnızca hesabı çalıştırmak, doğum haritasını hesaplamak, istediğin yorumları üretmek, mesajları iletmek, kötüye kullanımı önlemek ve bildirim göndermek için kullanılır. Reklam profili oluşturmayız ve kişisel verileri satmayız.</p>
 <h2>Yapay zekâ</h2><p>Athena yorumu istediğinde astroloji motorunun sonuçları ile doğum profilindeki gerekli bilgiler OpenAI API hizmetine gönderilebilir. Arkadaş mesajları ve grup sohbetleri Athena yorumuna gönderilmez.</p>
-<h2>Hizmet sağlayıcılar</h2><p>Sunucu ve veritabanı için Railway, bildirimler için Firebase Cloud Messaging, isteğe bağlı Athena yorumları için OpenAI kullanılır. Bu sağlayıcılar veriyi kendi güvenlik ve gizlilik koşulları kapsamında işler.</p>
+<h2>Hizmet sağlayıcılar</h2><p>Sunucu ve veritabanı için Railway, bildirimler için Firebase Cloud Messaging, isteğe bağlı Athena yorumları için OpenAI kullanılır. Ayarlardan açıkça izin verirsen Firebase Analytics yalnızca özellik kullanım olaylarını toplar; isim, e-posta, doğum bilgisi, konum, mesaj içeriği veya arkadaş kimliği analitiğe gönderilmez. Analitik iznini istediğin zaman kapatabilirsin. Bu sağlayıcılar veriyi kendi güvenlik ve gizlilik koşulları kapsamında işler.</p>
 <h2>Saklama ve silme</h2><p>Hesabın açık olduğu sürece gerekli kayıtlar saklanır. Ayarlar → Hesabımı ve verilerimi sil yoluyla veya hesap silme sayfasından hesabını ve ilişkili verileri kalıcı olarak silebilirsin. Güvenlik ve yasal yükümlülükler nedeniyle sınırlı kayıtlar zorunlu süre boyunca tutulabilir.</p>
 <h2>Çocukların gizliliği</h2><p>Olimora 13 yaşın altındaki kişiler için tasarlanmamıştır. 13 yaşın altında olduğunu öğrendiğimiz bir hesabı ve ilişkili verileri sileriz.</p>
 <h2>İletişim</h2><p>Gizlilik veya veri talebi için <a href='https://github.com/salihguduk680-code/olimora/issues'>destek kanalımıza</a> ulaşabilirsin.</p>

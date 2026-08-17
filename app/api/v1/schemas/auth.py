@@ -29,6 +29,19 @@ class RegistrationRequest(CredentialsRequest):
         return value
 
 
+class PasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
+            raise ValueError("yeni şifre en az bir harf ve bir rakam içermeli")
+        return value
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str

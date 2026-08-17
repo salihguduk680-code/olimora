@@ -50,13 +50,17 @@ async def daily_reading_history(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> list[DailyReadingResponse]:
     readings = (
-        await session.execute(
-            select(DailyReadingModel)
-            .where(DailyReadingModel.user_id == user.id)
-            .order_by(DailyReadingModel.reading_date.desc())
-            .limit(31)
+        (
+            await session.execute(
+                select(DailyReadingModel)
+                .where(DailyReadingModel.user_id == user.id)
+                .order_by(DailyReadingModel.reading_date.desc())
+                .limit(31)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_daily_response(item, cached=True) for item in readings]
 
 

@@ -45,8 +45,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_private_auth_secret_in_production(self) -> "Settings":
         if self.app_env.lower() == "production" and (
-            "local-development" in self.auth_secret
-            or len(self.auth_secret.encode("utf-8")) < 32
+            "local-development" in self.auth_secret or len(self.auth_secret.encode("utf-8")) < 32
         ):
             raise ValueError(
                 "AUTH_SECRET must be a private value of at least 32 bytes in production"

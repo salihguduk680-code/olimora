@@ -1,5 +1,19 @@
 # Değişiklik günlüğü
 
+## 0.16.0-beta.2 — 2026-08-17
+
+- Uygulama kökü Material 3 tema yüzeyine taşındı; sistem koyu temasında varsayılan
+  metinlerin siyah kalması ve okunmaması giderildi.
+- Açık ve koyu temada arka plan, yüzey ve metin renkleri artık aynı tema
+  hiyerarşisinden geliyor.
+- Şifre sıfırlama ve e-posta doğrulama iletileri Brevo HTTPS API üzerinden
+  gönderiliyor; Railway'in SMTP kısıtlamasına bağımlılık kaldırıldı.
+- E-posta sağlayıcısı hataları API anahtarları ve kullanıcı adresleri açığa
+  çıkmadan güvenli biçimde teşhis edilebiliyor.
+- E-posta doğrulama tekrarlarına kötüye kullanımı azaltan saatlik sınır eklendi.
+- Android oturum verisinin bulut yedeğine ve cihaz aktarımına girmemesi
+  kesinleştirildi.
+
 ## 0.16.0-beta.1 — geliştirme aşamasında
 
 - Süresi sınırlı, tek kullanımlık bağlantılarla e-posta doğrulama altyapısı eklendi.

@@ -29,8 +29,10 @@ def test_access_token_round_trip_and_tamper_rejection() -> None:
 def test_access_token_rejects_unexpected_algorithm_header() -> None:
     token = create_access_token(uuid.uuid4())
     _, payload, signature = token.split(".")
-    header = base64.urlsafe_b64encode(
-        json.dumps({"alg": "none", "typ": "JWT"}).encode()
-    ).rstrip(b"=").decode()
+    header = (
+        base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
 
     assert decode_access_token(f"{header}.{payload}.{signature}") is None

@@ -234,12 +234,16 @@ async def reset_password(
 
 @router.post("/request-email-verification", response_model=ActionResponse, status_code=202)
 async def request_email_verification(
+    http_request: Request,
     background_tasks: BackgroundTasks,
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> ActionResponse:
     if user.email_verified:
         return ActionResponse(status="already_verified")
+    key = _attempt_key("email-verification", user.email, http_request)
+    if not _auth_limiter.consume(key, limit=5, window_seconds=60 * 60):
+        return ActionResponse(status="accepted")
     if not mail_configured():
         raise HTTPException(status_code=503, detail="E-posta hizmeti henüz etkin değil.")
     raw_token = await _issue_account_token(session, user, "verify_email", timedelta(hours=24))

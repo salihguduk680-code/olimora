@@ -88,13 +88,16 @@ async def social_overview(
             continue
         unread_count = 0
         if friendship.status == "accepted":
-            unread_count = await session.scalar(
-                select(func.count(DirectMessageModel.id)).where(
-                    DirectMessageModel.friendship_id == friendship.id,
-                    DirectMessageModel.sender_id != user.id,
-                    DirectMessageModel.read_at.is_(None),
+            unread_count = (
+                await session.scalar(
+                    select(func.count(DirectMessageModel.id)).where(
+                        DirectMessageModel.friendship_id == friendship.id,
+                        DirectMessageModel.sender_id != user.id,
+                        DirectMessageModel.read_at.is_(None),
+                    )
                 )
-            ) or 0
+                or 0
+            )
         other = await _social_user(session, other_id, unread_count=unread_count)
         if friendship.status == "accepted":
             friends.append(other)
@@ -118,12 +121,15 @@ async def send_friend_request(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> FriendRequestResponse:
-    recent_requests = await session.scalar(
-        select(func.count(FriendshipModel.id)).where(
-            FriendshipModel.requested_by_id == user.id,
-            FriendshipModel.created_at >= datetime.now(UTC) - timedelta(hours=1),
+    recent_requests = (
+        await session.scalar(
+            select(func.count(FriendshipModel.id)).where(
+                FriendshipModel.requested_by_id == user.id,
+                FriendshipModel.created_at >= datetime.now(UTC) - timedelta(hours=1),
+            )
         )
-    ) or 0
+        or 0
+    )
     if recent_requests >= get_settings().friend_requests_per_hour:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -230,13 +236,17 @@ async def list_messages(
     await _touch_presence(session, user, commit=False)
     friendship = await _accepted_friendship(session, user.id, friend_user_id)
     messages = (
-        await session.execute(
-            select(DirectMessageModel)
-            .where(DirectMessageModel.friendship_id == friendship.id)
-            .order_by(DirectMessageModel.created_at.desc())
-            .limit(100)
+        (
+            await session.execute(
+                select(DirectMessageModel)
+                .where(DirectMessageModel.friendship_id == friendship.id)
+                .order_by(DirectMessageModel.created_at.desc())
+                .limit(100)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     read_at = datetime.now(UTC)
     await session.execute(
         update(DirectMessageModel)
@@ -263,12 +273,15 @@ async def send_message(
 ) -> MessageResponse:
     await _touch_presence(session, user, commit=False)
     friendship = await _accepted_friendship(session, user.id, friend_user_id)
-    recent_messages = await session.scalar(
-        select(func.count(DirectMessageModel.id)).where(
-            DirectMessageModel.sender_id == user.id,
-            DirectMessageModel.created_at >= datetime.now(UTC) - timedelta(minutes=1),
+    recent_messages = (
+        await session.scalar(
+            select(func.count(DirectMessageModel.id)).where(
+                DirectMessageModel.sender_id == user.id,
+                DirectMessageModel.created_at >= datetime.now(UTC) - timedelta(minutes=1),
+            )
         )
-    ) or 0
+        or 0
+    )
     if recent_messages >= get_settings().messages_per_minute:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -335,15 +348,10 @@ async def _blocked_user_ids(session: AsyncSession, user_id: uuid.UUID) -> set[uu
             or_(UserBlockModel.blocker_id == user_id, UserBlockModel.blocked_id == user_id)
         )
     )
-    return {
-        blocked_id if blocker_id == user_id else blocker_id
-        for blocker_id, blocked_id in rows
-    }
+    return {blocked_id if blocker_id == user_id else blocker_id for blocker_id, blocked_id in rows}
 
 
-async def _users_blocked(
-    session: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID
-) -> bool:
+async def _users_blocked(session: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID) -> bool:
     return (
         await session.scalar(
             select(func.count(UserBlockModel.id)).where(
@@ -384,9 +392,7 @@ async def _social_user(
     )
 
 
-async def _touch_presence(
-    session: AsyncSession, user: UserModel, *, commit: bool = True
-) -> None:
+async def _touch_presence(session: AsyncSession, user: UserModel, *, commit: bool = True) -> None:
     """Record activity without exposing which screen or content the user is viewing."""
     now = datetime.now(UTC)
     if user.last_seen_at is None or user.last_seen_at < now - timedelta(seconds=20):

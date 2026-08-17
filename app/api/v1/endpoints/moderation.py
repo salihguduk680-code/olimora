@@ -37,12 +37,15 @@ async def report_user(
         raise HTTPException(status_code=422, detail="Kendini bildiremezsin.")
     if await session.get(UserModel, request.reported_user_id) is None:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
-    recent = await session.scalar(
-        select(func.count(UserReportModel.id)).where(
-            UserReportModel.reporter_id == user.id,
-            UserReportModel.created_at >= datetime.now(UTC) - timedelta(days=1),
+    recent = (
+        await session.scalar(
+            select(func.count(UserReportModel.id)).where(
+                UserReportModel.reporter_id == user.id,
+                UserReportModel.created_at >= datetime.now(UTC) - timedelta(days=1),
+            )
         )
-    ) or 0
+        or 0
+    )
     if recent >= 20:
         raise HTTPException(status_code=429, detail="Bugün çok fazla bildirim gönderdin.")
     if request.message_id is not None:
@@ -135,12 +138,15 @@ async def submit_product_feedback(
     user: Annotated[UserModel, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> ModerationActionResponse:
-    recent = await session.scalar(
-        select(func.count(ProductFeedbackModel.id)).where(
-            ProductFeedbackModel.user_id == user.id,
-            ProductFeedbackModel.created_at >= datetime.now(UTC) - timedelta(days=1),
+    recent = (
+        await session.scalar(
+            select(func.count(ProductFeedbackModel.id)).where(
+                ProductFeedbackModel.user_id == user.id,
+                ProductFeedbackModel.created_at >= datetime.now(UTC) - timedelta(days=1),
+            )
         )
-    ) or 0
+        or 0
+    )
     if recent >= 5:
         raise HTTPException(status_code=429, detail="Bugün yeterince geri bildirim gönderdin.")
     session.add(
@@ -161,7 +167,4 @@ async def blocked_user_ids(session: AsyncSession, user_id: uuid.UUID) -> set[uui
             or_(UserBlockModel.blocker_id == user_id, UserBlockModel.blocked_id == user_id)
         )
     )
-    return {
-        blocked_id if blocker_id == user_id else blocker_id
-        for blocker_id, blocked_id in rows
-    }
+    return {blocked_id if blocker_id == user_id else blocker_id for blocker_id, blocked_id in rows}

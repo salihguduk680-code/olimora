@@ -22,8 +22,10 @@ class RegistrationRequest(CredentialsRequest):
     @field_validator("password")
     @classmethod
     def validate_registration_password(cls, value: str) -> str:
-        if len(value) < 10 or not any(char.isalpha() for char in value) or not any(
-            char.isdigit() for char in value
+        if (
+            len(value) < 10
+            or not any(char.isalpha() for char in value)
+            or not any(char.isdigit() for char in value)
         ):
             raise ValueError("şifre en az 10 karakter, bir harf ve bir rakam içermeli")
         return value

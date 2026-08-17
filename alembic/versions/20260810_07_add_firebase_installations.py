@@ -30,9 +30,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("fid"),
     )
-    op.create_index(
-        "ix_firebase_installations_user_id", "firebase_installations", ["user_id"]
-    )
+    op.create_index("ix_firebase_installations_user_id", "firebase_installations", ["user_id"])
 
 
 def downgrade() -> None:

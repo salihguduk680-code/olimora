@@ -64,8 +64,7 @@ async def compare_friend_charts(
                 if own["name"] in bodies and friend_position["name"] in bodies:
                     scores[category] += weight
             if own["name"] in {"sun", "moon", "mercury", "venus", "mars", "saturn"} and (
-                friend_position["name"]
-                in {"sun", "moon", "mercury", "venus", "mars", "saturn"}
+                friend_position["name"] in {"sun", "moon", "mercury", "venus", "mars", "saturn"}
             ):
                 aspects.append(
                     CompatibilityAspectResponse(

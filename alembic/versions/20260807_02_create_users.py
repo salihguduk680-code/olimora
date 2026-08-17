@@ -26,7 +26,11 @@ def upgrade() -> None:
     op.create_index("ix_users_email", "users", ["email"], unique=True)
     op.create_unique_constraint("uq_birth_profiles_user_id", "birth_profiles", ["user_id"])
     op.create_foreign_key(
-        "fk_birth_profiles_user_id_users", "birth_profiles", "users", ["user_id"], ["id"],
+        "fk_birth_profiles_user_id_users",
+        "birth_profiles",
+        "users",
+        ["user_id"],
+        ["id"],
         ondelete="CASCADE",
     )
 

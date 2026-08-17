@@ -63,6 +63,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
@@ -483,13 +484,17 @@ fun OlimoraApp() {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
         if (!isConversationOpen) OlimoraHeader(
             step = when (screen) {
                 OlimoraScreen.Login -> "HESAP"
@@ -769,6 +774,7 @@ fun OlimoraApp() {
             OlimoraScreen.About -> AboutScreen(onBack = {
                 screen = if (chartResult == null) OlimoraScreen.BirthForm else OlimoraScreen.ChartResult
             })
+        }
         }
     }
     if (screen == OlimoraScreen.ChartResult && onboardingStep >= 0) {

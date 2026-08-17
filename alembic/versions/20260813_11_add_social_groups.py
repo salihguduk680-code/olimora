@@ -54,9 +54,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["sender_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_group_messages_group_created", "group_messages", ["group_id", "created_at"]
-    )
+    op.create_index("ix_group_messages_group_created", "group_messages", ["group_id", "created_at"])
 
 
 def downgrade() -> None:

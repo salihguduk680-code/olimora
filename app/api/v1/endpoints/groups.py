@@ -38,12 +38,16 @@ async def list_groups(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> list[GroupResponse]:
     memberships = (
-        await session.execute(
-            select(GroupMemberModel)
-            .where(GroupMemberModel.user_id == user.id)
-            .order_by(GroupMemberModel.joined_at.desc())
+        (
+            await session.execute(
+                select(GroupMemberModel)
+                .where(GroupMemberModel.user_id == user.id)
+                .order_by(GroupMemberModel.joined_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [await _group_response(session, item.group_id, user.id, item) for item in memberships]
 
 
@@ -77,13 +81,17 @@ async def list_group_messages(
 ) -> list[GroupMessageResponse]:
     membership = await _membership(session, group_id, user.id)
     messages = (
-        await session.execute(
-            select(GroupMessageModel)
-            .where(GroupMessageModel.group_id == group_id)
-            .order_by(GroupMessageModel.created_at.desc())
-            .limit(100)
+        (
+            await session.execute(
+                select(GroupMessageModel)
+                .where(GroupMessageModel.group_id == group_id)
+                .order_by(GroupMessageModel.created_at.desc())
+                .limit(100)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     membership.last_read_at = datetime.now(UTC)
     await session.commit()
     return [await _message_response(session, item, user.id) for item in reversed(messages)]
@@ -97,12 +105,15 @@ async def send_group_message(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> GroupMessageResponse:
     membership = await _membership(session, group_id, user.id)
-    recent_messages = await session.scalar(
-        select(func.count(GroupMessageModel.id)).where(
-            GroupMessageModel.sender_id == user.id,
-            GroupMessageModel.created_at >= datetime.now(UTC) - timedelta(minutes=1),
+    recent_messages = (
+        await session.scalar(
+            select(func.count(GroupMessageModel.id)).where(
+                GroupMessageModel.sender_id == user.id,
+                GroupMessageModel.created_at >= datetime.now(UTC) - timedelta(minutes=1),
+            )
         )
-    ) or 0
+        or 0
+    )
     if recent_messages >= get_settings().messages_per_minute:
         raise HTTPException(status_code=429, detail="Çok hızlı mesaj gönderiyorsun.")
     message = GroupMessageModel(
@@ -180,20 +191,27 @@ async def _group_response(
     if group is None:
         raise HTTPException(status_code=404, detail="Grup bulunamadı.")
     rows = (
-        await session.execute(
-            select(GroupMemberModel)
-            .where(GroupMemberModel.group_id == group_id)
-            .order_by(GroupMemberModel.joined_at)
+        (
+            await session.execute(
+                select(GroupMemberModel)
+                .where(GroupMemberModel.group_id == group_id)
+                .order_by(GroupMemberModel.joined_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     current = membership or next(item for item in rows if item.user_id == current_user_id)
-    unread = await session.scalar(
-        select(func.count(GroupMessageModel.id)).where(
-            GroupMessageModel.group_id == group_id,
-            GroupMessageModel.sender_id != current_user_id,
-            GroupMessageModel.created_at > (current.last_read_at or current.joined_at),
+    unread = (
+        await session.scalar(
+            select(func.count(GroupMessageModel.id)).where(
+                GroupMessageModel.group_id == group_id,
+                GroupMessageModel.sender_id != current_user_id,
+                GroupMessageModel.created_at > (current.last_read_at or current.joined_at),
+            )
         )
-    ) or 0
+        or 0
+    )
     return GroupResponse(
         id=group.id,
         name=group.name,

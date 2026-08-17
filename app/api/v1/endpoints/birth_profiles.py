@@ -135,8 +135,7 @@ async def save_my_birth_profile(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                "Doğum bilgilerini yeniden değiştirmek için yaklaşık "
-                f"{hours} saat beklemelisin."
+                f"Doğum bilgilerini yeniden değiştirmek için yaklaşık {hours} saat beklemelisin."
             ),
         )
     await session.execute(delete(DailyReadingModel).where(DailyReadingModel.user_id == user.id))

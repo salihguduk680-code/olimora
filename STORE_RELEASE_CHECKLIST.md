@@ -15,7 +15,7 @@
 
 ## Play Console
 
-- [ ] Kalıcı destek/gizlilik e-postası belirle. GitHub Issues tek başına mağaza desteği için yeterli değildir.
+- [x] Kalıcı destek/gizlilik e-postası ve doğrulanmış Brevo göndereni yapılandırıldı.
 - [ ] Gizlilik politikası: `https://olimora-production.up.railway.app/privacy`
 - [ ] Hesap silme: `https://olimora-production.up.railway.app/account-deletion`
 - [ ] Kullanım/topluluk koşulları: `https://olimora-production.up.railway.app/terms`
@@ -32,6 +32,6 @@
 ## Yayın engelleri
 
 1. Kalıcı destek/gizlilik e-postası henüz belirlenmedi.
-2. Uygulama içi parola değiştirme var; e-posta üzerinden parola sıfırlama ve e-posta doğrulama için gerçek posta sağlayıcısı henüz bağlı değil.
+2. En az iki fiziksel cihazda açık/koyu tema ve e-posta kurtarma akışının son kabul testi yapılmalı.
 3. Moderasyon taleplerine kim tarafından ve kaç saat içinde cevap verileceği belirlenmeli.
 4. Uygulamanın koşulları ve gizlilik metni gerçek yayından önce hukuki incelemeden geçirilmeli.

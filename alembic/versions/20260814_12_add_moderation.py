@@ -48,13 +48,20 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("reporter_id <> reported_user_id", name="ck_user_report_distinct_users"),
-        sa.CheckConstraint("reason IN ('spam', 'harassment', 'inappropriate', 'other')", name="ck_user_report_reason"),
+        sa.CheckConstraint(
+            "reason IN ('spam', 'harassment', 'inappropriate', 'other')",
+            name="ck_user_report_reason",
+        ),
         sa.ForeignKeyConstraint(["message_id"], ["direct_messages.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["reported_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["reporter_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_user_reports_reporter_created", "user_reports", ["reporter_id", "created_at"])
+    op.create_index(
+        "ix_user_reports_reporter_created",
+        "user_reports",
+        ["reporter_id", "created_at"],
+    )
     op.create_table(
         "content_feedback",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -63,12 +70,22 @@ def upgrade() -> None:
         sa.Column("reason", sa.String(length=30), nullable=False),
         sa.Column("details", sa.String(length=500), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("content_type IN ('natal', 'daily_sign', 'daily_premium')", name="ck_content_feedback_type"),
-        sa.CheckConstraint("reason IN ('unsafe', 'incorrect', 'offensive', 'other')", name="ck_content_feedback_reason"),
+        sa.CheckConstraint(
+            "content_type IN ('natal', 'daily_sign', 'daily_premium')",
+            name="ck_content_feedback_type",
+        ),
+        sa.CheckConstraint(
+            "reason IN ('unsafe', 'incorrect', 'offensive', 'other')",
+            name="ck_content_feedback_reason",
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_content_feedback_user_created", "content_feedback", ["user_id", "created_at"])
+    op.create_index(
+        "ix_content_feedback_user_created",
+        "content_feedback",
+        ["user_id", "created_at"],
+    )
 
 
 def downgrade() -> None:

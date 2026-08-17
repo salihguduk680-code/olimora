@@ -107,6 +107,7 @@ async def send_account_email(to_email: str, subject: str, body: str) -> bool:
         return True
 
     def _send() -> None:
+        assert smtp_host is not None
         with smtplib.SMTP(smtp_host, settings.smtp_port, timeout=15) as client:
             if settings.smtp_starttls:
                 client.starttls()

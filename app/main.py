@@ -22,9 +22,7 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
-    async def security_middleware(
-        request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def security_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:

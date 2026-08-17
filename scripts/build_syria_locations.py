@@ -8,10 +8,20 @@ from collections import defaultdict
 from pathlib import Path
 
 GOVERNORATE_NAMES = {
-    "01": "Haseke", "02": "Lazkiye", "03": "Kuneytire", "04": "Rakka",
-    "05": "Süveyda", "06": "Dera", "07": "Deyrizor", "08": "Şam Kırsalı",
-    "09": "Halep", "10": "Hama", "11": "Humus", "12": "İdlib",
-    "13": "Şam", "14": "Tartus",
+    "01": "Haseke",
+    "02": "Lazkiye",
+    "03": "Kuneytire",
+    "04": "Rakka",
+    "05": "Süveyda",
+    "06": "Dera",
+    "07": "Deyrizor",
+    "08": "Şam Kırsalı",
+    "09": "Halep",
+    "10": "Hama",
+    "11": "Humus",
+    "12": "İdlib",
+    "13": "Şam",
+    "14": "Tartus",
 }
 
 

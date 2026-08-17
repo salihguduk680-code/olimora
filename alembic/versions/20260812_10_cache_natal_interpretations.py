@@ -29,9 +29,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "user_id", "input_hash", name="uq_natal_interpretation_user_input"
-        ),
+        sa.UniqueConstraint("user_id", "input_hash", name="uq_natal_interpretation_user_input"),
     )
     op.create_index(
         "ix_natal_interpretations_user_id",
